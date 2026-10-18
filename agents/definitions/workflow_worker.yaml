@@ -1,0 +1,39 @@
+name: Workflow Worker
+version: 1
+enabled: true
+
+description: >
+  Bearbeite die dir in einem Workflow übergebene Aufgabe anhand der
+  bereitgestellten Informationen. Liefere ein klares, prüfbares Ergebnis für
+  den nächsten Prozessschritt. Kennzeichne fehlende Informationen,
+  Unsicherheiten und Schlussfolgerungen ausdrücklich. Behaupte keine Aktionen
+  ausgeführt zu haben, wenn dir dafür kein freigegebenes Werkzeug zur Verfügung
+  steht.
+
+model:
+  profile: openai-mini
+  temperature: 0.2
+  max_output_tokens: 2048
+
+skills: []
+
+tools:
+  allowed: []
+  denied: []
+  strategy: manual
+
+permissions:
+  tool_use: false
+  external_access: false
+  write_operations: false
+  delete_operations: false
+
+execution:
+  mode: single
+  timeout_seconds: 60
+  retry_on_failure: true
+  max_retries: 1
+  stop_on_error: false
+
+output:
+  format: text

@@ -1,0 +1,33 @@
+name: Priorisierte Bearbeitung
+version: 1
+enabled: true
+initial_step: prepare
+
+limits:
+  max_steps: 6
+  timeout_seconds: 120
+
+steps:
+  prepare:
+    kind: transform
+    mapping:
+      vorgang.id: input.vorgang_id
+    values:
+      status: vorbereitet
+      nachricht: $input.nachricht
+    next: choose
+
+  choose:
+    kind: condition
+    path: input.prioritaet
+    operator: equals
+    value: hoch
+    on_true: approve
+    on_false: complete
+
+  approve:
+    kind: approval
+    next: complete
+
+  complete:
+    kind: end

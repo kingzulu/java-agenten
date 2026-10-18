@@ -1,0 +1,25 @@
+name: Generische Prüfung mit Freigabe
+version: 1
+enabled: true
+initial_step: process
+
+limits:
+  max_steps: 3
+  timeout_seconds: 300
+  max_cost_microusd: 100000
+
+steps:
+  process:
+    kind: agent
+    agent: workflow_worker
+    prompt: >
+      Bearbeite die übergebene Aufgabe nachvollziehbar und kennzeichne fehlende
+      Informationen. Gib ein Ergebnis zur menschlichen Prüfung aus.
+    next: approve
+
+  approve:
+    kind: approval
+    next: complete
+
+  complete:
+    kind: end

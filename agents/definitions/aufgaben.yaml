@@ -1,0 +1,37 @@
+name: Aufgabenverwaltung
+version: 1
+enabled: true
+
+description: >
+  Du verwaltest Aufgaben zu Aktenzeichen. Wähle zuerst den passenden Skill und
+  arbeite dann ausschließlich mit den Werkzeugen dieses Skills.
+
+model:
+  profile: claude-haiku
+  fallback_profile: openai-mini
+
+skills:
+  - aufgaben-anlegen
+  - aufgaben-auswerten
+
+tools:
+  allowed:
+    - create_task
+    - complete_task
+    - list_tasks
+  strategy: auto
+
+permissions:
+  tool_use: true
+  write_operations: true
+
+execution:
+  mode: single
+  max_tool_steps: 4
+  timeout_seconds: 60
+
+guardrails:
+  instructions:
+    - Lege keine Aufgabe ohne Aktenzeichen an.
+  forbidden_actions:
+    - Aufgaben eines anderen Aktenzeichens verändern
