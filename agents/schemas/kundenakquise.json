@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "required": [
+    "zielgruppe",
+    "erster_schritt",
+    "erwartetes_ergebnis"
+  ],
+  "properties": {
+    "zielgruppe": {
+      "type": "string"
+    },
+    "erster_schritt": {
+      "type": "string"
+    },
+    "erwartetes_ergebnis": {
+      "type": "string"
+    }
+  }
+}

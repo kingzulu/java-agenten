@@ -1,0 +1,266 @@
+package com.zuluindustries.agenten.cli;
+
+import com.zuluindustries.agenten.Platform;
+import com.zuluindustries.agenten.agent.AgentDefinition;
+import com.zuluindustries.agenten.agent.MemoryConfig;
+import com.zuluindustries.agenten.core.AgentResult;
+import com.zuluindustries.agenten.core.Conversation;
+import com.zuluindustries.agenten.core.Settings;
+import com.zuluindustries.agenten.model.CostCalculator;
+import com.zuluindustries.agenten.model.ModelProfile;
+import com.zuluindustries.agenten.skill.Skill;
+import com.zuluindustries.agenten.util.Environment;
+import com.zuluindustries.agenten.util.Json;
+import com.zuluindustries.agenten.workflow.WorkflowRun;
+
+import java.io.BufferedReader;
+import java.io.FileDescriptor;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
+/**
+ * Kommandozeile; entspricht {@code main.py}.
+ *
+ * <pre>
+ *   agenten "&lt;frage&gt;"
+ *   agenten &lt;agent&gt; "&lt;aufgabe&gt;"
+ *   agenten &lt;agent&gt;                      (interaktiver Modus)
+ *   agenten --show-config &lt;agent&gt;
+ *   agenten --workflow &lt;key&gt; '&lt;json-eingabe&gt;'
+ * </pre>
+ */
+public final class Main {
+
+    Main() {
+    }
+
+    public static void main(String[] args) {
+        Environment environment = Environment.system(dotEnvPath());
+        Settings settings = Settings.load(environment);
+        System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", logLevel(settings.logLevel()));
+        Platform platform = Platform.builder(settings, environment).build();
+        PrintStream out = new PrintStream(new FileOutputStream(FileDescriptor.out), true, StandardCharsets.UTF_8);
+        PrintStream err = new PrintStream(new FileOutputStream(FileDescriptor.err), true, StandardCharsets.UTF_8);
+        int exitCode = new Main().run(platform, args, out, err);
+        System.exit(exitCode);
+    }
+
+    int run(Platform platform, String[] args, PrintStream out, PrintStream err) {
+        if (args.length == 0) {
+            printUsage(platform, out);
+            return 1;
+        }
+
+        if ("--show-config".equals(args[0])) {
+            if (args.length != 2) {
+                out.println("Fehler: Bitte einen Agenten angeben.");
+                out.println("Aufruf: agenten --show-config <agent>");
+                return 1;
+            }
+            try {
+                AgentDefinition agent = platform.agents().get(args[1], platform.settings().defaultModelProfile());
+                out.print(Json.DEFINITIONS_YAML.writeValueAsString(agent));
+                return 0;
+            } catch (IllegalArgumentException | IOException error) {
+                out.println("Fehler: " + error.getMessage());
+                out.println("Verfügbare Agenten: " + String.join(", ", platform.agents().names()));
+                return 1;
+            }
+        }
+
+        if ("--workflow".equals(args[0])) {
+            return runWorkflow(platform, args, out, err);
+        }
+
+        String agentName;
+        String userInput;
+        boolean interactive;
+        if (args.length == 1) {
+            if (platform.agents().contains(args[0])) {
+                agentName = args[0];
+                userInput = null;
+                interactive = true;
+            } else {
+                agentName = null;
+                userInput = args[0];
+                interactive = false;
+            }
+        } else {
+            agentName = args[0];
+            userInput = args[1];
+            interactive = false;
+        }
+
+        if (!interactive && userInput.isBlank()) {
+            err.println("Fehler: Die Eingabe ist leer.");
+            return 1;
+        }
+
+        AgentDefinition agent;
+        try {
+            agent = platform.agents().get(agentName, platform.settings().defaultModelProfile());
+        } catch (IllegalArgumentException error) {
+            out.println("Fehler: " + error.getMessage());
+            out.println("Verfügbare Agenten: " + String.join(", ", platform.agents().names()));
+            return 1;
+        }
+
+        ModelProfile profile = platform.profiles().get(agent.model().profile());
+        out.println("Provider: " + profile.provider());
+        out.println("Modell: " + profile.model());
+
+        List<String> allowedTools = platform.runner().runtime().policy().effectiveAllowedTools(agent);
+        List<Skill> skills = platform.runner().runtime().capabilities().prepare(allowedTools, agent.skills()).skills();
+        if (!skills.isEmpty()) {
+            out.println("Verfügbare Skills:");
+            out.println();
+            for (Skill skill : skills) {
+                out.println("- " + skill.name() + ": " + skill.description());
+            }
+        }
+
+        int maxSteps = platform.settings().maxAgentSteps();
+        if (!interactive) {
+            AgentResult result = platform.runner().run(agent, userInput, maxSteps);
+            out.println();
+            out.println(result.text());
+            printCosts(platform, result, out);
+            return 0;
+        }
+
+        out.println();
+        out.println("Interaktiver Modus gestartet.");
+        out.println("Mit 'exit' oder 'quit' beenden.");
+        MemoryConfig memory = agent.context().memory();
+        Conversation conversation = !memory.enabled() || MemoryConfig.SESSION.equals(memory.scope())
+                ? new Conversation() : null;
+        long sessionIn = 0;
+        long sessionOut = 0;
+        long sessionTotal = 0;
+        double sessionCost = 0;
+        String sessionCurrency = "";
+        BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+        while (true) {
+            out.println();
+            out.print("Du: ");
+            out.flush();
+            String line;
+            try {
+                line = reader.readLine();
+            } catch (IOException error) {
+                break;
+            }
+            if (line == null) {
+                out.println();
+                break;
+            }
+            line = line.strip();
+            if (line.equalsIgnoreCase("exit") || line.equalsIgnoreCase("quit")) {
+                break;
+            }
+            if (line.isEmpty()) {
+                continue;
+            }
+            AgentResult result = platform.runner().run(agent, line, maxSteps, conversation);
+            out.println();
+            out.println(result.text());
+            CostCalculator.Costs costs = printCosts(platform, result, out);
+            sessionIn += result.inputTokens();
+            sessionOut += result.outputTokens();
+            sessionTotal += result.totalTokens();
+            if (costs != null) {
+                sessionCost += costs.totalCost();
+                sessionCurrency = costs.currency();
+            }
+        }
+        out.println();
+        out.println("Tokenverbrauch der Session:");
+        out.println("Input:  " + sessionIn);
+        out.println("Output: " + sessionOut);
+        out.println("Gesamt: " + sessionTotal);
+        out.println();
+        out.println(String.format(Locale.ROOT, "Kosten der Session: %.8f %s", sessionCost, sessionCurrency).strip());
+        return 0;
+    }
+
+    private int runWorkflow(Platform platform, String[] args, PrintStream out, PrintStream err) {
+        if (args.length < 2 || args.length > 3) {
+            err.println("Aufruf: agenten --workflow <key> '<json-eingabe>'");
+            err.println("Verfügbare Workflows: " + String.join(", ", platform.workflows().definitions().keySet()));
+            return 1;
+        }
+        Map<String, Object> input;
+        try {
+            input = args.length == 3 ? Json.readMap(args[2]) : Map.of();
+        } catch (RuntimeException error) {
+            err.println("Fehler: Die Workflow-Eingabe ist kein valides JSON-Objekt.");
+            return 1;
+        }
+        try {
+            WorkflowRun run = platform.workflows().start(args[1], input);
+            out.println(Json.writePretty(platform.workflows().serialize(run)));
+            return "failed".equals(run.status.key()) ? 1 : 0;
+        } catch (IllegalArgumentException error) {
+            err.println("Fehler: " + error.getMessage());
+            return 1;
+        }
+    }
+
+    private static CostCalculator.Costs printCosts(Platform platform, AgentResult result, PrintStream out) {
+        out.println();
+        out.println("Tokenverbrauch:");
+        out.println("Input:  " + result.inputTokens());
+        out.println("Output: " + result.outputTokens());
+        out.println("Gesamt: " + result.totalTokens());
+        if (result.model() == null) {
+            return null;
+        }
+        CostCalculator.Costs costs;
+        try {
+            costs = platform.costs().calculate(result.model(), result.inputTokens(), result.outputTokens());
+        } catch (IllegalArgumentException error) {
+            out.println();
+            out.println("Kosten: " + error.getMessage());
+            return null;
+        }
+        out.println();
+        out.println("Kosten:");
+        out.println(String.format(Locale.ROOT, "Input:  %.8f %s", costs.inputCost(), costs.currency()));
+        out.println(String.format(Locale.ROOT, "Output: %.8f %s", costs.outputCost(), costs.currency()));
+        out.println(String.format(Locale.ROOT, "Gesamt: %.8f %s", costs.totalCost(), costs.currency()));
+        return costs;
+    }
+
+    private static void printUsage(Platform platform, PrintStream out) {
+        out.println("Aufrufmöglichkeiten:");
+        out.println();
+        out.println("  agenten \"<frage>\"");
+        out.println("  agenten <agent> \"<frage>\"");
+        out.println("  agenten <agent>");
+        out.println("  agenten --show-config <agent>");
+        out.println("  agenten --workflow <key> '<json-eingabe>'");
+        out.println();
+        out.println("Verfügbare Agenten: " + String.join(", ", platform.agents().names()));
+    }
+
+    private static Path dotEnvPath() {
+        String home = System.getenv("AGENTEN_HOME");
+        return Path.of(home == null || home.isBlank() ? "." : home).resolve(".env");
+    }
+
+    private static String logLevel(String level) {
+        return switch (level) {
+            case "DEBUG" -> "debug";
+            case "WARNING", "WARN" -> "warn";
+            case "ERROR", "CRITICAL" -> "error";
+            default -> "info";
+        };
+    }
+}
