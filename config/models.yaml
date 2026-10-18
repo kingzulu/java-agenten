@@ -1,0 +1,80 @@
+# Modellprofile und Listenpreise der Plattform.
+#
+# Preise gelten je 1 Million Tokens, ohne Steuern und Rabatte. Die Kosten werden je
+# Modellaufruf berechnet:
+#   input        Input-Tokens zum normalen Preis
+#   cached_input Input-Tokens aus dem Prompt-Cache (ohne Angabe: Preis von input)
+#   cache_write  Input-Tokens, die in den Prompt-Cache geschrieben werden (ohne Angabe: input)
+#   output       Output-Tokens, einschließlich Reasoning-Tokens
+#
+# Preisänderungen werden als weitere Periode mit valid_from eingetragen, damit alte
+# und neue Preise jeweils am richtigen Tag gelten. long_context beschreibt höhere
+# Preise für Aufrufe mit mehr Input-Tokens als above_input_tokens.
+#
+# Nach jedem Abgleich mit den Anbieterseiten prices_as_of aktualisieren. Ist das
+# Datum älter als 90 Tage, weist die Kommandozeile darauf hin.
+
+prices_as_of: 2026-10-18
+
+profiles:
+  openai-mini:
+    provider: openai
+    model: gpt-5.4-mini
+  claude-sonnet:
+    provider: anthropic
+    model: claude-sonnet-4-6
+  claude-haiku:
+    provider: anthropic
+    model: claude-haiku-4-5
+  scaleway-mistral-small:
+    provider: scaleway
+    model: mistral-small-3.2-24b-instruct-2506
+  gemini-flash:
+    provider: gemini
+    model: gemini-3.8-flash
+
+models:
+  gpt-5.4-mini:
+    currency: USD
+    source: https://developers.openai.com/api/docs/models/gpt-5.4-mini
+    prices:
+      - input: 0.75
+        cached_input: 0.075
+        output: 4.50
+
+  # Claude 4.6 und neuer: volles 1-Mio.-Kontextfenster zum Standardpreis.
+  claude-sonnet-4-6:
+    currency: USD
+    source: https://platform.claude.com/docs/en/about-claude/pricing
+    prices:
+      - input: 3.00
+        cached_input: 0.30
+        cache_write: 3.75
+        output: 15.00
+
+  claude-haiku-4-5:
+    currency: USD
+    source: https://platform.claude.com/docs/en/about-claude/pricing
+    prices:
+      - input: 1.00
+        cached_input: 0.10
+        cache_write: 1.25
+        output: 5.00
+
+  # Die ersten 1 Mio. Tokens sind bei Scaleway kostenlos; das wird nicht abgezogen.
+  mistral-small-3.2-24b-instruct-2506:
+    currency: EUR
+    source: https://www.scaleway.com/fr/tarifs/model-as-a-service
+    prices:
+      - input: 0.15
+        output: 0.35
+
+  # Der Gemini-Provider ist in Java noch nicht angeschlossen. Laut Berichten von
+  # Drittanbietern verdoppeln sich die Preise ab 2027-01-01; vor Nutzung mit
+  # https://ai.google.dev/gemini-api/docs/pricing abgleichen.
+  gemini-3.8-flash:
+    currency: USD
+    prices:
+      - input: 0.75
+        cached_input: 0.075
+        output: 3.75

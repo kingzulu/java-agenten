@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -64,6 +65,26 @@ class AgentRunnerTest {
 
         assertEquals("Ersatz", result.text());
         assertEquals("zweites", result.modelProfile());
+    }
+
+    @Test
+    void keepsTokensOfFailedAttemptAfterFallback() {
+        primary.then(FakeProvider.text("")).then(FakeProvider.text("")).then(FakeProvider.text(""));
+        secondary.then(FakeProvider.text("Ersatz"));
+
+        AgentResult result = runner.run(Fixtures.agent("model: {profile: erstes, fallback_profile: zweites}\n"), "x", 5);
+
+        List<ModelCall> calls = result.modelCalls();
+        assertEquals("Ersatz", result.text());
+        assertEquals("eins", calls.getFirst().provider());
+        assertEquals("modell-1", calls.getFirst().model());
+        assertEquals("zwei", calls.getLast().provider());
+        assertEquals("modell-2", calls.getLast().model());
+        assertEquals(calls.stream().mapToLong(ModelCall::totalTokens).sum(), result.totalTokens());
+        assertEquals(calls.size() * 15L, result.totalTokens());
+        for (int i = 0; i < calls.size(); i++) {
+            assertEquals(i, calls.get(i).callIndex());
+        }
     }
 
     @Test

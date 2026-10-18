@@ -291,10 +291,12 @@ public final class WorkflowEngine {
         }
 
         AgentResult result = agents.run(step.agent(), prompt);
-        CostCalculator.Costs cost = result.model() == null
-                ? null : costs.calculate(result.model(), result.inputTokens(), result.outputTokens());
-        long microUsd = cost == null ? 0 : cost.microUsd();
-        long microEur = cost == null ? 0 : cost.microEur();
+        long microUsd = 0;
+        long microEur = 0;
+        for (CostCalculator.Costs cost : costs.calculate(result.modelCalls())) {
+            microUsd += cost.microUsd();
+            microEur += cost.microEur();
+        }
 
         Map<String, Object> output = new LinkedHashMap<>();
         output.put("text", result.text());

@@ -57,7 +57,7 @@ class AgentRuntimeTest {
         assertEquals("Hallo", result.text());
         assertNull(result.error());
         assertEquals(15, result.totalTokens());
-        assertEquals(List.of(new ModelCall(0, 0, "initial", 10, 5, 15)), result.usage().modelCalls());
+        assertEquals(List.of(new ModelCall(0, 0, "initial", "fake", "modell", 10, 5, 15, 0, 0)), result.usage().modelCalls());
         assertEquals("fake", result.usage().provider());
         assertEquals(List.of(Message.user("Hi")), provider.requests.getFirst().input());
         assertTrue(provider.requests.getFirst().instructions().contains("Agentenspezifische Anweisungen:\nTest."));
@@ -240,7 +240,7 @@ class AgentRuntimeTest {
         AgentResult result = runtime.runTurn(slow, "m", agent, "x", null, 5);
 
         assertEquals("Zeitlimit des Agenten überschritten.", result.error());
-        assertEquals(List.of(new ModelCall(0, 0, "late_response", 7, 3, 10)), result.usage().modelCalls());
+        assertEquals(List.of(new ModelCall(0, 0, "late_response", "fake", "m", 7, 3, 10, 0, 0)), result.usage().modelCalls());
         assertEquals(10, result.totalTokens());
     }
 

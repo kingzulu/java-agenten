@@ -132,10 +132,13 @@ public final class OpenAiProvider implements ModelProvider {
             }
         }
         JsonNode usage = response.path("usage");
+        // input_tokens enthält die Cache-Treffer bereits (input_tokens_details.cached_tokens).
         TokenUsage tokens = new TokenUsage(
                 usage.path("input_tokens").asLong(),
                 usage.path("output_tokens").asLong(),
-                usage.path("total_tokens").asLong());
+                usage.path("total_tokens").asLong(),
+                usage.path("input_tokens_details").path("cached_tokens").asLong(),
+                0);
         boolean complete = "completed".equals(response.path("status").asText("completed"));
         return new ModelResponse(response.path("id").asText(null), text.toString(), complete,
                 toolCalls, tokens, null);

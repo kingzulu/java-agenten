@@ -5,24 +5,13 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.TreeSet;
 
-/** Verfügbare Modellprofile; entspricht {@code models/model_profiles.py}. */
+/** Verfügbare Modellprofile aus {@code config/models.yaml}; entspricht {@code models/model_profiles.py}. */
 public final class ModelProfiles {
 
     private final Map<String, ModelProfile> profiles;
 
     public ModelProfiles(Map<String, ModelProfile> profiles) {
         this.profiles = Collections.unmodifiableMap(new LinkedHashMap<>(profiles));
-    }
-
-    public static ModelProfiles defaults() {
-        Map<String, ModelProfile> profiles = new LinkedHashMap<>();
-        profiles.put("scaleway-mistral-small",
-                new ModelProfile("scaleway", "mistral-small-3.2-24b-instruct-2506", "EUR"));
-        profiles.put("openai-mini", new ModelProfile("openai", "gpt-5.4-mini"));
-        profiles.put("claude-sonnet", new ModelProfile("anthropic", "claude-sonnet-4-5"));
-        profiles.put("claude-haiku", new ModelProfile("anthropic", "claude-haiku-4-5"));
-        profiles.put("gemini-flash", new ModelProfile("gemini", "gemini-3.8-flash"));
-        return new ModelProfiles(profiles);
     }
 
     public boolean contains(String name) {

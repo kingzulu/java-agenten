@@ -1,69 +1,46 @@
 package com.zuluindustries.agenten.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.networknt.schema.JsonSchemaFactory;
+import com.networknt.schema.SchemaValidatorsConfig;
+import com.networknt.schema.SpecVersion;
+import com.networknt.schema.SpecVersionDetector;
+import com.networknt.schema.ValidationMessage;
 
-import java.util.Iterator;
-import java.util.Map;
+import java.util.Locale;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
- * Bewusst kleine JSON-Schema-Prüfung (type, required, properties, enum),
- * identisch zum Umfang von {@code _validate_json_schema} in Python.
+ * Vollständige JSON-Schema-Prüfung (Draft 4 bis 2020-12) über
+ * {@code com.networknt:json-schema-validator}. Ohne {@code $schema} gilt Draft 2020-12.
+ * Formatangaben wie {@code date} oder {@code email} werden ebenfalls geprüft.
  */
 public final class JsonSchemaValidator {
+
+    private static final SchemaValidatorsConfig CONFIG = SchemaValidatorsConfig.builder()
+            .locale(Locale.GERMAN)
+            .formatAssertionsEnabled(true)
+            .build();
 
     private JsonSchemaValidator() {
     }
 
     public static void validate(JsonNode value, JsonNode schema) {
-        validate(value, schema, "$");
-    }
-
-    private static void validate(JsonNode value, JsonNode schema, String path) {
-        String expectedType = schema.path("type").asText(null);
-        if (expectedType != null && !matchesType(value, expectedType)) {
-            throw new IllegalArgumentException(path + " muss vom Typ '" + expectedType + "' sein.");
-        }
-
-        if (value.isObject()) {
-            for (JsonNode key : schema.path("required")) {
-                if (!value.has(key.asText())) {
-                    throw new IllegalArgumentException("Pflichtfeld fehlt: " + path + "." + key.asText());
-                }
-            }
-            Iterator<Map.Entry<String, JsonNode>> properties = schema.path("properties").fields();
-            while (properties.hasNext()) {
-                Map.Entry<String, JsonNode> property = properties.next();
-                if (value.has(property.getKey())) {
-                    validate(value.get(property.getKey()), property.getValue(), path + "." + property.getKey());
-                }
-            }
-        }
-
-        JsonNode allowed = schema.get("enum");
-        if (allowed != null && allowed.isArray()) {
-            boolean found = false;
-            for (JsonNode candidate : allowed) {
-                if (candidate.equals(value)) {
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                throw new IllegalArgumentException("Ungültiger Wert für " + path + ": " + value);
-            }
+        SpecVersion.VersionFlag version = SpecVersionDetector.detectOptionalVersion(schema, false)
+                .orElse(SpecVersion.VersionFlag.V202012);
+        Set<ValidationMessage> errors = JsonSchemaFactory.getInstance(version)
+                .getSchema(schema, CONFIG)
+                .validate(value);
+        if (!errors.isEmpty()) {
+            throw new IllegalArgumentException("Die Ausgabe entspricht nicht dem Schema: "
+                    + errors.stream().map(JsonSchemaValidator::describe).sorted().collect(Collectors.joining("; ")));
         }
     }
 
-    private static boolean matchesType(JsonNode value, String type) {
-        return switch (type) {
-            case "object" -> value.isObject();
-            case "array" -> value.isArray();
-            case "string" -> value.isTextual();
-            case "number" -> value.isNumber();
-            case "integer" -> value.isIntegralNumber();
-            case "boolean" -> value.isBoolean();
-            case "null" -> value.isNull();
-            default -> true;
-        };
+    /** Fehler am Wurzelobjekt haben einen leeren Pfad; sie werden mit {@code $} gekennzeichnet. */
+    private static String describe(ValidationMessage error) {
+        String message = error.getMessage();
+        return message.startsWith(":") ? "$" + message : message;
     }
 }
