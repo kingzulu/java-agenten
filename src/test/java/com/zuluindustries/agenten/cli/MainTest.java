@@ -63,6 +63,7 @@ class MainTest {
         assertTrue(output.contains("Antwort"));
         assertTrue(output.contains("Gesamt: 15"));
         assertTrue(output.contains("Gesamt: 0.00003000 USD"));
+        assertTrue(output.contains("Preisstand: "));
     }
 
     @Test

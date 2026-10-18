@@ -5,8 +5,10 @@ import com.zuluindustries.agenten.agent.AgentDefinition;
 import com.zuluindustries.agenten.agent.MemoryConfig;
 import com.zuluindustries.agenten.core.AgentResult;
 import com.zuluindustries.agenten.core.Conversation;
+import com.zuluindustries.agenten.core.ModelCall;
 import com.zuluindustries.agenten.core.Settings;
 import com.zuluindustries.agenten.model.CostCalculator;
+import com.zuluindustries.agenten.model.ModelCatalog;
 import com.zuluindustries.agenten.model.ModelProfile;
 import com.zuluindustries.agenten.skill.Skill;
 import com.zuluindustries.agenten.util.Environment;
@@ -21,6 +23,8 @@ import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -38,6 +42,9 @@ import java.util.Map;
  */
 public final class Main {
 
+    /** Ab diesem Alter des Preisstands weist die CLI auf einen Abgleich hin. */
+    static final int PRICE_REVIEW_DAYS = 90;
+
     Main() {
     }
 
@@ -45,9 +52,19 @@ public final class Main {
         Environment environment = Environment.system(dotEnvPath());
         Settings settings = Settings.load(environment);
         System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", logLevel(settings.logLevel()));
-        Platform platform = Platform.builder(settings, environment).build();
         PrintStream out = new PrintStream(new FileOutputStream(FileDescriptor.out), true, StandardCharsets.UTF_8);
         PrintStream err = new PrintStream(new FileOutputStream(FileDescriptor.err), true, StandardCharsets.UTF_8);
+        Platform platform;
+        try {
+            platform = Platform.builder(settings, environment).build();
+        } catch (IllegalArgumentException error) {
+            // Fehlerhafte Konfiguration: verständliche Meldung statt Stacktrace.
+            err.println("Fehler: " + error.getMessage());
+            err.println("Das Projektverzeichnis ist " + settings.projectRoot().toAbsolutePath().normalize()
+                    + " (änderbar über AGENTEN_HOME).");
+            System.exit(1);
+            return;
+        }
         int exitCode = new Main().run(platform, args, out, err);
         System.exit(exitCode);
     }
@@ -144,8 +161,7 @@ public final class Main {
         long sessionIn = 0;
         long sessionOut = 0;
         long sessionTotal = 0;
-        double sessionCost = 0;
-        String sessionCurrency = "";
+        Map<String, Double> sessionCosts = new LinkedHashMap<>();
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
         while (true) {
             out.println();
@@ -171,13 +187,12 @@ public final class Main {
             AgentResult result = platform.runner().run(agent, line, maxSteps, conversation);
             out.println();
             out.println(result.text());
-            CostCalculator.Costs costs = printCosts(platform, result, out);
+            List<CostCalculator.Costs> costs = printCosts(platform, result, out);
             sessionIn += result.inputTokens();
             sessionOut += result.outputTokens();
             sessionTotal += result.totalTokens();
-            if (costs != null) {
-                sessionCost += costs.totalCost();
-                sessionCurrency = costs.currency();
+            for (CostCalculator.Costs item : costs) {
+                sessionCosts.merge(item.currency(), item.totalCost(), Double::sum);
             }
         }
         out.println();
@@ -186,7 +201,11 @@ public final class Main {
         out.println("Output: " + sessionOut);
         out.println("Gesamt: " + sessionTotal);
         out.println();
-        out.println(String.format(Locale.ROOT, "Kosten der Session: %.8f %s", sessionCost, sessionCurrency).strip());
+        if (sessionCosts.isEmpty()) {
+            out.println("Kosten der Session: 0");
+        }
+        sessionCosts.forEach((currency, amount) ->
+                out.println(String.format(Locale.ROOT, "Kosten der Session: %.8f %s", amount, currency)));
         return 0;
     }
 
@@ -213,28 +232,37 @@ public final class Main {
         }
     }
 
-    private static CostCalculator.Costs printCosts(Platform platform, AgentResult result, PrintStream out) {
+    private static List<CostCalculator.Costs> printCosts(Platform platform, AgentResult result, PrintStream out) {
+        long cached = result.modelCalls().stream().mapToLong(ModelCall::cachedInputTokens).sum();
         out.println();
         out.println("Tokenverbrauch:");
-        out.println("Input:  " + result.inputTokens());
+        out.println("Input:  " + result.inputTokens() + (cached > 0 ? " (davon aus dem Cache: " + cached + ")" : ""));
         out.println("Output: " + result.outputTokens());
         out.println("Gesamt: " + result.totalTokens());
-        if (result.model() == null) {
-            return null;
+        if (result.modelCalls().isEmpty()) {
+            return List.of();
         }
-        CostCalculator.Costs costs;
+        List<CostCalculator.Costs> costs;
         try {
-            costs = platform.costs().calculate(result.model(), result.inputTokens(), result.outputTokens());
+            costs = platform.costs().calculate(result.modelCalls());
         } catch (IllegalArgumentException error) {
             out.println();
             out.println("Kosten: " + error.getMessage());
-            return null;
+            return List.of();
         }
-        out.println();
-        out.println("Kosten:");
-        out.println(String.format(Locale.ROOT, "Input:  %.8f %s", costs.inputCost(), costs.currency()));
-        out.println(String.format(Locale.ROOT, "Output: %.8f %s", costs.outputCost(), costs.currency()));
-        out.println(String.format(Locale.ROOT, "Gesamt: %.8f %s", costs.totalCost(), costs.currency()));
+        for (CostCalculator.Costs item : costs) {
+            out.println();
+            out.println("Kosten:");
+            out.println(String.format(Locale.ROOT, "Input:  %.8f %s", item.inputCost(), item.currency()));
+            out.println(String.format(Locale.ROOT, "Output: %.8f %s", item.outputCost(), item.currency()));
+            out.println(String.format(Locale.ROOT, "Gesamt: %.8f %s", item.totalCost(), item.currency()));
+        }
+        LocalDate asOf = platform.catalog().pricesAsOf();
+        out.println("Preisstand: " + asOf + " (" + ModelCatalog.RELATIVE_PATH + ")");
+        if (asOf.isBefore(platform.costs().today().minusDays(PRICE_REVIEW_DAYS))) {
+            out.println("Hinweis: Der Preisstand ist älter als " + PRICE_REVIEW_DAYS
+                    + " Tage. Bitte die Preise mit den Anbieterseiten abgleichen.");
+        }
         return costs;
     }
 

@@ -57,7 +57,8 @@ class ProviderAdapterTest {
         RecordingTransport transport = new RecordingTransport().respond(200, """
                 {"id": "resp_1", "status": "completed",
                  "output": [{"type": "function_call", "name": "lookup", "arguments": "{\\"q\\": \\"x\\"}", "call_id": "c1"}],
-                 "usage": {"input_tokens": 11, "output_tokens": 4, "total_tokens": 15}}
+                 "usage": {"input_tokens": 11, "output_tokens": 4, "total_tokens": 15,
+                           "input_tokens_details": {"cached_tokens": 6}}}
                 """).respond(200, """
                 {"id": "resp_2", "status": "completed",
                  "output": [{"type": "message", "content": [{"type": "output_text", "text": "Antwort"}]}],
@@ -79,7 +80,7 @@ class ProviderAdapterTest {
         assertFalse(body.path("parallel_tool_calls").asBoolean());
         assertEquals(256, body.path("max_output_tokens").asInt());
         assertEquals(new ToolCall("lookup", Map.of("q", "x"), "c1"), first.toolCalls().getFirst());
-        assertEquals(new TokenUsage(11, 4, 15), first.usage());
+        assertEquals(new TokenUsage(11, 4, 15, 6, 0), first.usage());
 
         JsonNode followup = transport.sent.get(1).body();
         assertEquals("resp_1", followup.path("previous_response_id").asText());
@@ -113,7 +114,8 @@ class ProviderAdapterTest {
         RecordingTransport transport = new RecordingTransport().respond(200, """
                 {"id": "msg_1", "content": [{"type": "text", "text": "Ich suche."},
                   {"type": "tool_use", "id": "tu_1", "name": "lookup", "input": {"q": "x"}}],
-                 "usage": {"input_tokens": 9, "output_tokens": 3}}
+                 "usage": {"input_tokens": 9, "output_tokens": 3,
+                           "cache_read_input_tokens": 100, "cache_creation_input_tokens": 20}}
                 """).respond(200, """
                 {"id": "msg_2", "content": [{"type": "text", "text": "Fertig"}],
                  "usage": {"input_tokens": 30, "output_tokens": 5}}
@@ -133,7 +135,8 @@ class ProviderAdapterTest {
         assertEquals("any", initial.body().path("tool_choice").path("type").asText());
         assertTrue(initial.body().path("tool_choice").path("disable_parallel_tool_use").asBoolean());
         assertFalse(initial.body().has("temperature"));
-        assertEquals(new TokenUsage(9, 3, 12), first.usage());
+        // Anthropic meldet Cache-Tokens getrennt; sie zählen zum Gesamtinput.
+        assertEquals(new TokenUsage(129, 3, 132, 100, 20), first.usage());
         assertEquals(new ToolCall("lookup", Map.of("q", "x"), "tu_1"), first.toolCalls().getFirst());
 
         JsonNode messages = transport.sent.get(1).body().path("messages");

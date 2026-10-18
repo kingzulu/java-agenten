@@ -82,9 +82,10 @@ public final class ScalewayProvider implements ModelProvider {
         long in = usage.path("prompt_tokens").asLong();
         long out = usage.path("completion_tokens").asLong();
         long total = usage.has("total_tokens") ? usage.path("total_tokens").asLong() : in + out;
+        long cached = usage.path("prompt_tokens_details").path("cached_tokens").asLong();
         return new ModelResponse(response.path("id").asText(null),
                 choices.get(0).path("message").path("content").asText(""), true, List.of(),
-                new TokenUsage(in, out, total), null);
+                new TokenUsage(in, out, total, cached, 0), null);
     }
 
     @Override

@@ -56,6 +56,7 @@ public final class AgentRunner {
 
         RuntimeException lastError = null;
         AgentResult lastResult = null;
+        List<ModelCall> spent = List.of();
         String lastProvider = null;
         String lastModel = null;
         String lastProfile = null;
@@ -86,9 +87,10 @@ public final class AgentRunner {
                                 defaultMaxSteps)
                         .withModelInfo(profile.provider(), profile.model(), profileName);
                 if (!result.failed()) {
-                    return result;
+                    return result.withEarlierCalls(spent);
                 }
-                lastResult = result;
+                lastResult = result.withEarlierCalls(spent);
+                spent = lastResult.modelCalls();
                 lastError = new AgentException(result.error());
             } catch (RuntimeException error) {
                 lastError = error;

@@ -97,19 +97,39 @@ class AgentPolicyTest {
         OutputConfig output = new OutputConfig("json", "person");
 
         assertEquals("{\"name\":\"X\"}", policy.validateOutput("{\"name\":\"X\"}", output));
-        assertEquals("Pflichtfeld fehlt: $.name",
+        assertEquals("Die Ausgabe entspricht nicht dem Schema: $: erforderliche Eigenschaft 'name' nicht gefunden",
                 assertThrows(IllegalArgumentException.class, () -> policy.validateOutput("{}", output)).getMessage());
-        assertEquals("$.name muss vom Typ 'string' sein.",
-                assertThrows(IllegalArgumentException.class,
-                        () -> policy.validateOutput("{\"name\": 1}", output)).getMessage());
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> policy.validateOutput("{\"name\": 1}", output)).getMessage().contains("/name"));
         assertTrue(assertThrows(IllegalArgumentException.class,
                 () -> policy.validateOutput("{\"name\":\"X\",\"rolle\":\"c\"}", output)).getMessage()
-                .startsWith("Ungültiger Wert für $.rolle"));
+                .contains("/rolle"));
         assertTrue(assertThrows(IllegalArgumentException.class,
                 () -> policy.validateOutput("kein json", output)).getMessage().startsWith("Die Ausgabe ist kein valides JSON"));
         assertThrows(IllegalArgumentException.class, () -> policy.validateOutput(" ", OutputConfig.defaults()));
         assertThrows(IllegalArgumentException.class,
                 () -> policy.validateOutput("{}", new OutputConfig("json", "../person")));
+    }
+
+    @Test
+    void validatesFullJsonSchemaVocabulary() {
+        Fixtures.write(root.resolve("agents/schemas/bestellung.json"), """
+                {"type": "object",
+                 "properties": {
+                   "menge": {"type": "integer", "minimum": 1},
+                   "kennung": {"type": "string", "pattern": "^B-[0-9]+$"},
+                   "positionen": {"type": "array", "items": {"type": "string"}},
+                   "lieferdatum": {"type": "string", "format": "date"}},
+                 "additionalProperties": false}
+                """);
+        OutputConfig output = new OutputConfig("json", "bestellung");
+        String valid = "{\"menge\":2,\"kennung\":\"B-17\",\"positionen\":[\"a\"],\"lieferdatum\":\"2026-10-19\"}";
+
+        assertEquals(valid, policy.validateOutput(valid, output));
+        for (String invalid : List.of("{\"menge\":0}", "{\"kennung\":\"X-1\"}", "{\"positionen\":[1]}",
+                "{\"lieferdatum\":\"morgen\"}", "{\"unbekannt\":true}")) {
+            assertThrows(IllegalArgumentException.class, () -> policy.validateOutput(invalid, output), invalid);
+        }
     }
 
     @Test

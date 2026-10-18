@@ -121,7 +121,13 @@ public final class AnthropicProvider implements ModelProvider {
             }
         }
         JsonNode usage = response.path("usage");
-        TokenUsage tokens = TokenUsage.of(usage.path("input_tokens").asLong(), usage.path("output_tokens").asLong());
+        // Bei Anthropic zählt input_tokens nur die ungecachten Tokens; Cache-Lese- und
+        // Schreibvorgänge werden getrennt gemeldet und hier zum Gesamtinput addiert.
+        long cacheRead = usage.path("cache_read_input_tokens").asLong();
+        long cacheWrite = usage.path("cache_creation_input_tokens").asLong();
+        long input = usage.path("input_tokens").asLong() + cacheRead + cacheWrite;
+        long output = usage.path("output_tokens").asLong();
+        TokenUsage tokens = new TokenUsage(input, output, input + output, cacheRead, cacheWrite);
         Object content = Json.toPlain(response.path("content"));
         return new ModelResponse(response.path("id").asText(null), text == null ? "" : text, true,
                 toolCalls, tokens, new State(List.copyOf(messages), content));

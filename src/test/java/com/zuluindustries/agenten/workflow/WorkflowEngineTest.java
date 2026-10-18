@@ -1,8 +1,9 @@
 package com.zuluindustries.agenten.workflow;
 
 import com.zuluindustries.agenten.core.AgentResult;
+import com.zuluindustries.agenten.core.ModelCall;
+import com.zuluindustries.agenten.core.UsageRecord;
 import com.zuluindustries.agenten.model.CostCalculator;
-import com.zuluindustries.agenten.model.ModelPricing;
 import com.zuluindustries.agenten.support.Fixtures;
 import com.zuluindustries.agenten.util.Json;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,12 +64,16 @@ class WorkflowEngineTest {
                 public AgentResult run(String agentName, String prompt) {
                     prompts.add(prompt);
                     String text = agentError == null ? "Ergebnis" : "Agentenfehler: " + agentError;
-                    return new AgentResult("t", text, null, 1_000, 100, 1_100, agentError,
+                    ModelCall call = new ModelCall(0, 0, "initial", "openai", "gpt-5.4-mini",
+                            1_000, 100, 1_100, 0, 0);
+                    UsageRecord usage = new UsageRecord("t", "openai", "gpt-5.4-mini", 1_000, 100, 1_100, 1,
+                            List.of(call));
+                    return new AgentResult("t", text, usage, 1_000, 100, 1_100, agentError,
                             "openai", "gpt-5.4-mini", "openai-mini");
                 }
             };
             engine = new WorkflowEngine(repository, definitions, actions, agents,
-                    new CostCalculator(ModelPricing.defaults()), Fixtures.FIXED_CLOCK);
+                    new CostCalculator(Fixtures.pricing()), Fixtures.FIXED_CLOCK);
         }
         return engine;
     }

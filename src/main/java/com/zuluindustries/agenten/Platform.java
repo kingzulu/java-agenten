@@ -8,7 +8,7 @@ import com.zuluindustries.agenten.core.AgentRuntime;
 import com.zuluindustries.agenten.core.Settings;
 import com.zuluindustries.agenten.model.CostCalculator;
 import com.zuluindustries.agenten.model.HttpTransport;
-import com.zuluindustries.agenten.model.ModelPricing;
+import com.zuluindustries.agenten.model.ModelCatalog;
 import com.zuluindustries.agenten.model.ModelProfiles;
 import com.zuluindustries.agenten.model.ProviderRegistry;
 import com.zuluindustries.agenten.model.anthropic.AnthropicProvider;
@@ -39,6 +39,7 @@ public final class Platform {
     private final ToolRegistry tools;
     private final SkillRegistry skills;
     private final AgentRegistry agents;
+    private final ModelCatalog catalog;
     private final ModelProfiles profiles;
     private final CostCalculator costs;
     private final AgentRunner runner;
@@ -52,8 +53,9 @@ public final class Platform {
         this.tools = builder.tools;
         this.skills = SkillRegistry.fromDirectory(root.resolve("skills"));
         this.agents = AgentRegistry.fromDirectory(root.resolve("agents").resolve("definitions"));
-        this.profiles = builder.profiles;
-        this.costs = new CostCalculator(builder.pricing);
+        this.catalog = builder.catalog != null ? builder.catalog : ModelCatalog.load(root);
+        this.profiles = catalog.profiles();
+        this.costs = new CostCalculator(catalog.pricing(), builder.clock);
         AgentPolicy policy = new AgentPolicy(tools, root, settings.agentTimezone(), builder.clock);
         AgentRuntime runtime = new AgentRuntime(tools, skills, policy);
         this.runner = new AgentRunner(runtime, profiles, builder.providers);
@@ -96,6 +98,10 @@ public final class Platform {
         return agents;
     }
 
+    public ModelCatalog catalog() {
+        return catalog;
+    }
+
     public ModelProfiles profiles() {
         return profiles;
     }
@@ -126,8 +132,7 @@ public final class Platform {
         private final Settings settings;
         private ToolRegistry tools;
         private ProviderRegistry providers;
-        private ModelProfiles profiles = ModelProfiles.defaults();
-        private ModelPricing pricing = ModelPricing.defaults();
+        private ModelCatalog catalog;
         private WorkflowActionRegistry actions = new WorkflowActionRegistry();
         private WorkflowRunRepository repository = new InMemoryWorkflowRunRepository();
         private ServiceRegistry services = new ServiceRegistry();
@@ -153,13 +158,9 @@ public final class Platform {
             return this;
         }
 
-        public Builder profiles(ModelProfiles value) {
-            this.profiles = value;
-            return this;
-        }
-
-        public Builder pricing(ModelPricing value) {
-            this.pricing = value;
+        /** Modellprofile und Preise; ohne Angabe aus {@code config/models.yaml} geladen. */
+        public Builder catalog(ModelCatalog value) {
+            this.catalog = value;
             return this;
         }
 

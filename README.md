@@ -33,8 +33,8 @@ java -jar target/agenten-0.1.0-SNAPSHOT.jar --show-config <agent-id>
 java -jar target/agenten-0.1.0-SNAPSHOT.jar --workflow <key> '{"task": "..."}'
 ```
 
-Nach jedem Lauf werden Tokenverbrauch und lokal berechnete Listenpreiskosten
-ausgegeben.
+Nach jedem Lauf werden Tokenverbrauch, lokal berechnete Listenpreiskosten und der
+Preisstand ausgegeben.
 
 ### Umgebungsvariablen
 
@@ -67,10 +67,53 @@ Wirksame Konfigurationsbereiche:
 - `permissions`: Tool-, Schreib-, Lösch- und externe Zugriffe sowie Bestätigungspflichten
 - `guardrails`: zusätzliche Regeln und verbotene Handlungen
 - `context`: Systemkontext, lokale Wissensquellen und sitzungsbezogenes Gedächtnis
-- `output`: Text- oder JSON-Ausgabe sowie optionale Schemavalidierung (`agents/schemas/<name>.json`)
+- `output`: Text- oder JSON-Ausgabe sowie optionale Schemavalidierung (`agents/schemas/<name>.json`,
+  vollständiger JSON-Schema-Standard bis Draft 2020-12 einschließlich `format`)
 
 Mitgeliefert sind `assistant`, `aufgaben` (zwei Skills mit Skill-Routing und
 Fallback-Profil) und `workflow_worker`.
+
+## Modelle und Preise
+
+Modellprofile und Listenpreise stehen in `config/models.yaml`, nicht im Code. Ein
+Agent wählt sein Profil in seiner YAML-Datei unter `model.profile`.
+
+```yaml
+prices_as_of: 2026-10-18          # Datum des letzten Abgleichs mit den Anbieterseiten
+
+profiles:
+  openai-mini: {provider: openai, model: gpt-5.4-mini}
+
+models:
+  gpt-5.4-mini:
+    currency: USD                  # USD oder EUR
+    source: https://developers.openai.com/api/docs/models/gpt-5.4-mini
+    prices:                        # je 1 Mio. Tokens
+      - input: 0.75
+        cached_input: 0.075        # Cache-Treffer
+        output: 4.50
+      - valid_from: 2027-01-01     # angekündigte Preisänderung
+        input: 0.90
+        output: 5.40
+```
+
+Weitere Felder: `cache_write` für Cache-Schreibvorgänge und `long_context` mit
+`above_input_tokens` für höhere Preise bei großem Input.
+
+So bleiben die Kosten korrekt:
+
+- Jeder Modellaufruf wird einzeln mit dem Preis seines Modells berechnet. Nach einem
+  Fallback zählen auch die Aufrufe des fehlgeschlagenen Versuchs mit.
+- Cache-Treffer (OpenAI `cached_tokens`, Anthropic `cache_read_input_tokens`) und
+  Cache-Schreibvorgänge werden mit ihrem eigenen Preis berechnet.
+- Maßgeblich ist die am Abrechnungstag (UTC) gültige Preisperiode.
+- Die Datei wird beim Start streng geprüft: Unbekannte Felder, fehlende Preise und
+  Profile ohne Preis sind Fehler. Ohne Preis werden keine Kosten von 0 angezeigt,
+  sondern eine Fehlermeldung.
+- Ist `prices_as_of` älter als 90 Tage, weist die Kommandozeile auf einen Abgleich hin.
+
+Nicht berücksichtigt sind Steuern, Rabatte, Freikontingente (etwa die ersten
+1 Mio. Tokens bei Scaleway) und Zuschläge für regionale Endpunkte.
 
 ## Architektur
 
@@ -80,7 +123,7 @@ Fallback-Profil) und `workflow_worker`.
 | `tool` | Tool-Schnittstelle, Sicherheitskategorien, Registry, Beispiel-Tools | `tools/registry.py`, `tools/tasks.py` |
 | `skill` | SKILL.md-Loader, Freigabe, Routing-Tool `activate_skill` | `skills/` |
 | `core` | Richtlinien, Instruktionen, Ausgabeprüfung, Agentic Loop, Fallback, Gesprächsverlauf | `core/` |
-| `model` | Provider-Abstraktion, Modellprofile, Preise, Kostenrechner | `models/`, `cost_calculator.py` |
+| `model` | Provider-Abstraktion, Modellkatalog (`config/models.yaml`), Kostenrechner | `models/`, `cost_calculator.py` |
 | `workflow` | Workflow-Definitionen, Aktionen, Engine, Ablage | `workflows/` |
 | `service` | Service-Manifeste und Registry | `platform_core/services.py` |
 | `cli` | Kommandozeile | `main.py` |

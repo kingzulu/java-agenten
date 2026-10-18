@@ -87,7 +87,7 @@ public final class AgentRuntime {
             }
             if (error instanceof AgentTimeoutException timeout && timeout.lateResponse() != null) {
                 turn.modelCalls.add(ModelCall.of(turn.modelCalls.size(), turn.modelCalls.size(),
-                        "late_response", timeout.lateResponse().usage()));
+                        "late_response", provider.name(), model, timeout.lateResponse().usage()));
             }
             String message = messageOf(error);
             LOG.warn("[trace={}] Agent turn failed error={}", turn.traceId, message);
@@ -334,11 +334,11 @@ public final class AgentRuntime {
 
         private void recordCall(int step, String callType, ModelResponse response) {
             int callIndex = modelCalls.size();
-            ModelCall call = ModelCall.of(callIndex, step, callType, response.usage());
+            ModelCall call = ModelCall.of(callIndex, step, callType, provider.name(), model, response.usage());
             modelCalls.add(call);
             LOG.info("[trace={}] Model call completed call_index={} step={} call_type={} input_tokens={} "
-                            + "output_tokens={} total_tokens={}", traceId, callIndex, step, callType,
-                    call.inputTokens(), call.outputTokens(), call.totalTokens());
+                            + "cached_input_tokens={} output_tokens={} total_tokens={}", traceId, callIndex, step, callType,
+                    call.inputTokens(), call.cachedInputTokens(), call.outputTokens(), call.totalTokens());
         }
 
         private ModelResponse callWithRetries(Supplier<ModelResponse> call) {
