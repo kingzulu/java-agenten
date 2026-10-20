@@ -1,0 +1,60 @@
+# B2B-Verfügbarkeitsmonitor: Portale, Waren und Benachrichtigungen.
+#
+# Ein Lauf wird von außen gestartet (cron, launchd), siehe README:
+#   java -jar target/agenten-0.1.0-SNAPSHOT.jar --monitor
+#
+# Zugangsdaten stehen nie in dieser Datei. Unter "credentials" steht nur der Name
+# der Umgebungsvariablen (oder des Eintrags in .env), die den Wert enthält.
+#
+# Die beiden Portale unten verwenden den Test-Connector "demo": Er fragt nichts ab,
+# sondern liefert den unter settings.items hinterlegten Bestand. Wer dort Werte
+# ändert und erneut prüft, sieht, wie Änderungen erkannt und gemeldet werden.
+
+monitor:
+  name: b2b-verfuegbarkeit
+  interval_minutes: 30            # Takt der externen Zeitsteuerung (nur zur Dokumentation)
+  database: data/monitor.db       # SQLite-Historie, relativ zum Projektverzeichnis
+
+portals:
+  grosshandel_a:
+    name: Großhandel A (Test)
+    connector: demo
+    enabled: true
+    delay_ms: 0                   # Pause zwischen zwei Abfragen dieses Portals (Standard 1000)
+    settings:
+      items:
+        "4711": {available: true, quantity: 120, price: "29.90", currency: EUR, delivery: 1-2 Werktage}
+        "4712": {available: false, price: "18.40", currency: EUR}
+
+  grosshandel_b:
+    name: Großhandel B (Test)
+    connector: demo
+    enabled: true
+    delay_ms: 0
+    # Ein echtes Portal würde hier seine Zugangsdaten referenzieren, z. B.:
+    # credentials:
+    #   api_key: PORTAL_B_API_KEY
+    settings:
+      items:
+        "ABC-123": {available: false, delivery: auf Anfrage}
+        "XYZ-789": {available: true, quantity: 8, price: "19.50", currency: EUR, delivery: 3-5 Werktage}
+
+products:
+  - id: produkt_001
+    name: Produkt A
+    ean: "1234567890123"
+    portals:
+      grosshandel_a: {sku: "4711"}
+      grosshandel_b: {sku: "ABC-123"}
+
+  - id: produkt_002
+    name: Produkt B
+    portals:
+      grosshandel_a: {sku: "4712"}
+      grosshandel_b: {sku: "XYZ-789"}
+
+notifications:
+  on_stock_change: true           # wieder verfügbar / nicht mehr verfügbar
+  on_price_change: true
+  on_delivery_change: false
+  on_check_failure: true          # Abfrage schlägt neu fehl (Ergebnis "unbekannt")

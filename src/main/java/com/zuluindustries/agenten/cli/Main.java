@@ -10,6 +10,8 @@ import com.zuluindustries.agenten.core.Settings;
 import com.zuluindustries.agenten.model.CostCalculator;
 import com.zuluindustries.agenten.model.ModelCatalog;
 import com.zuluindustries.agenten.model.ModelProfile;
+import com.zuluindustries.agenten.monitor.AvailabilityMonitor;
+import com.zuluindustries.agenten.monitor.MonitorConfig;
 import com.zuluindustries.agenten.skill.Skill;
 import com.zuluindustries.agenten.util.Environment;
 import com.zuluindustries.agenten.util.Json;
@@ -23,7 +25,10 @@ import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -38,12 +43,15 @@ import java.util.Map;
  *   agenten &lt;agent&gt;                      (interaktiver Modus)
  *   agenten --show-config &lt;agent&gt;
  *   agenten --workflow &lt;key&gt; '&lt;json-eingabe&gt;'
+ *   agenten --monitor                      (ein Lauf des B2B-Verfügbarkeitsmonitors)
  * </pre>
  */
 public final class Main {
 
     /** Ab diesem Alter des Preisstands weist die CLI auf einen Abgleich hin. */
     static final int PRICE_REVIEW_DAYS = 90;
+
+    private static final DateTimeFormatter STAND = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm");
 
     Main() {
     }
@@ -94,6 +102,14 @@ public final class Main {
 
         if ("--workflow".equals(args[0])) {
             return runWorkflow(platform, args, out, err);
+        }
+
+        if ("--monitor".equals(args[0])) {
+            if (args.length != 1) {
+                err.println("Aufruf: agenten --monitor");
+                return 1;
+            }
+            return runMonitor(platform, out, err);
         }
 
         String agentName;
@@ -232,6 +248,77 @@ public final class Main {
         }
     }
 
+    /**
+     * Ein Lauf des Verfügbarkeitsmonitors über den Workflow {@link AvailabilityMonitor#WORKFLOW}.
+     * Die Übersicht wird auch dann ausgegeben, wenn der anschließende Bericht scheitert.
+     */
+    @SuppressWarnings("unchecked")
+    private int runMonitor(Platform platform, PrintStream out, PrintStream err) {
+        if (platform.monitor() == null) {
+            err.println("Fehler: " + MonitorConfig.RELATIVE_PATH + " fehlt; der Verfügbarkeitsmonitor ist nicht konfiguriert.");
+            return 1;
+        }
+        Map<String, Object> data;
+        try {
+            data = platform.workflows().serialize(platform.workflows().start(AvailabilityMonitor.WORKFLOW, Map.of()));
+        } catch (IllegalArgumentException error) {
+            err.println("Fehler: " + error.getMessage());
+            return 1;
+        }
+        Map<String, Object> check = null;
+        String report = null;
+        for (Map<String, Object> step : (List<Map<String, Object>>) data.get("steps")) {
+            if (!"completed".equals(step.get("status")) || !(step.get("output") instanceof Map<?, ?> output)) {
+                continue;
+            }
+            if ("pruefen".equals(step.get("step"))) {
+                check = (Map<String, Object>) output;
+            } else if ("bericht".equals(step.get("step")) && output.get("text") != null) {
+                report = output.get("text").toString();
+            }
+        }
+        if (check != null) {
+            out.println("Verfügbarkeit, Stand " + STAND.format(Instant.parse(check.get("geprueft_am").toString())
+                    .atZone(ZoneId.of(platform.settings().agentTimezone()))) + ":");
+            out.println();
+            out.print(check.get("tabelle"));
+            out.println();
+            List<Map<String, Object>> changes = (List<Map<String, Object>>) check.get("aenderungen");
+            if (changes == null || changes.isEmpty()) {
+                out.println("Keine Änderungen seit dem letzten Lauf.");
+            } else {
+                out.println("Änderungen seit dem letzten Lauf:");
+                for (Map<String, Object> change : changes) {
+                    out.println("- " + change.get("ware") + " bei " + change.get("portal") + ": "
+                            + change.get("beschreibung") + " (" + change.get("vorher") + " → " + change.get("nachher") + ")");
+                }
+            }
+        }
+        if (report != null) {
+            out.println();
+            out.println("Bericht:");
+            out.println(report);
+        }
+        Map<String, Object> usage = (Map<String, Object>) data.get("usage");
+        if (((Number) usage.get("total_tokens")).longValue() > 0) {
+            out.println();
+            out.println("Tokenverbrauch: " + usage.get("total_tokens"));
+            long microUsd = ((Number) usage.get("cost_microusd")).longValue();
+            long microEur = ((Number) usage.get("cost_microeur")).longValue();
+            if (microUsd > 0) {
+                out.println(String.format(Locale.ROOT, "Kosten: %.6f USD", microUsd / 1_000_000.0));
+            }
+            if (microEur > 0) {
+                out.println(String.format(Locale.ROOT, "Kosten: %.6f EUR", microEur / 1_000_000.0));
+            }
+        }
+        if ("failed".equals(data.get("status"))) {
+            err.println("Fehler: " + data.get("error"));
+            return 1;
+        }
+        return 0;
+    }
+
     private static List<CostCalculator.Costs> printCosts(Platform platform, AgentResult result, PrintStream out) {
         long cached = result.modelCalls().stream().mapToLong(ModelCall::cachedInputTokens).sum();
         out.println();
@@ -274,6 +361,7 @@ public final class Main {
         out.println("  agenten <agent>");
         out.println("  agenten --show-config <agent>");
         out.println("  agenten --workflow <key> '<json-eingabe>'");
+        out.println("  agenten --monitor");
         out.println();
         out.println("Verfügbare Agenten: " + String.join(", ", platform.agents().names()));
     }

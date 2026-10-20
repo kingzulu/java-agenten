@@ -14,6 +14,10 @@ import com.zuluindustries.agenten.model.ProviderRegistry;
 import com.zuluindustries.agenten.model.anthropic.AnthropicProvider;
 import com.zuluindustries.agenten.model.openai.OpenAiProvider;
 import com.zuluindustries.agenten.model.scaleway.ScalewayProvider;
+import com.zuluindustries.agenten.monitor.AvailabilityMonitor;
+import com.zuluindustries.agenten.monitor.ConnectorRegistry;
+import com.zuluindustries.agenten.monitor.MonitorConfig;
+import com.zuluindustries.agenten.monitor.MonitorStore;
 import com.zuluindustries.agenten.service.ServiceRegistry;
 import com.zuluindustries.agenten.skill.SkillRegistry;
 import com.zuluindustries.agenten.tool.ToolRegistry;
@@ -46,6 +50,7 @@ public final class Platform {
     private final WorkflowActionRegistry actions;
     private final WorkflowEngine workflows;
     private final ServiceRegistry services;
+    private final AvailabilityMonitor monitor;
 
     private Platform(Builder builder) {
         this.settings = builder.settings;
@@ -61,6 +66,12 @@ public final class Platform {
         this.runner = new AgentRunner(runtime, profiles, builder.providers);
         this.actions = builder.actions;
         this.services = builder.services;
+        MonitorConfig monitorConfig = MonitorConfig.loadIfPresent(root);
+        this.monitor = monitorConfig == null ? null : new AvailabilityMonitor(monitorConfig, builder.connectors,
+                new MonitorStore(root.resolve(monitorConfig.monitor().database())), builder.environment, builder.clock);
+        if (monitor != null) {
+            actions.register(AvailabilityMonitor.ACTION, monitor::runAsAction);
+        }
         AgentStepExecutor executor = new AgentStepExecutor() {
             @Override
             public boolean knows(String agentName) {
@@ -126,20 +137,28 @@ public final class Platform {
         return services;
     }
 
+    /** B2B-Verfügbarkeitsmonitor; {@code null}, wenn {@code config/monitor.yaml} fehlt. */
+    public AvailabilityMonitor monitor() {
+        return monitor;
+    }
+
     /** Konfigurierbarer Aufbau; Standardwerte entsprechen dem Python-Projekt. */
     public static final class Builder {
 
         private final Settings settings;
+        private final Function<String, String> environment;
         private ToolRegistry tools;
         private ProviderRegistry providers;
         private ModelCatalog catalog;
         private WorkflowActionRegistry actions = new WorkflowActionRegistry();
         private WorkflowRunRepository repository = new InMemoryWorkflowRunRepository();
         private ServiceRegistry services = new ServiceRegistry();
+        private ConnectorRegistry connectors = ConnectorRegistry.defaults();
         private Clock clock = Clock.systemUTC();
 
         private Builder(Settings settings, Function<String, String> environment) {
             this.settings = settings;
+            this.environment = environment;
             this.tools = new ToolRegistry().registerAll(new TaskTools().tools());
             HttpTransport transport = HttpTransport.jdk();
             this.providers = new ProviderRegistry()
@@ -176,6 +195,12 @@ public final class Platform {
 
         public Builder services(ServiceRegistry value) {
             this.services = value;
+            return this;
+        }
+
+        /** Zugriffsarten für Portale des Verfügbarkeitsmonitors. */
+        public Builder connectors(ConnectorRegistry value) {
+            this.connectors = value;
             return this;
         }
 

@@ -31,6 +31,7 @@ java -jar target/agenten-0.1.0-SNAPSHOT.jar <agent-id> "<aufgabe>"    # Einmal-M
 java -jar target/agenten-0.1.0-SNAPSHOT.jar <agent-id>                # interaktiver Modus
 java -jar target/agenten-0.1.0-SNAPSHOT.jar --show-config <agent-id>
 java -jar target/agenten-0.1.0-SNAPSHOT.jar --workflow <key> '{"task": "..."}'
+java -jar target/agenten-0.1.0-SNAPSHOT.jar --monitor                 # ein Lauf des Verfügbarkeitsmonitors
 ```
 
 Nach jedem Lauf werden Tokenverbrauch, lokal berechnete Listenpreiskosten und der
@@ -126,6 +127,7 @@ Nicht berücksichtigt sind Steuern, Rabatte, Freikontingente (etwa die ersten
 | `model` | Provider-Abstraktion, Modellkatalog (`config/models.yaml`), Kostenrechner | `models/`, `cost_calculator.py` |
 | `workflow` | Workflow-Definitionen, Aktionen, Engine, Ablage | `workflows/` |
 | `service` | Service-Manifeste und Registry | `platform_core/services.py` |
+| `monitor` | B2B-Verfügbarkeitsmonitor: Konfiguration, Connectoren, Historie, Änderungserkennung | – (neu) |
 | `cli` | Kommandozeile | `main.py` |
 
 `Platform` verdrahtet alles (Composition Root) und lässt sich über den Builder
@@ -188,6 +190,81 @@ platform.workflows().continueWorkflow(run.runId, true, null, false);
 Läufe werden über `WorkflowRunRepository` gespeichert. Enthalten ist eine
 speicherbasierte Ablage, die sich wie eine Datenbank verhält (flüchtige Daten
 gehen beim erneuten Laden verloren).
+
+## B2B-Verfügbarkeitsmonitor
+
+Prüft konfigurierte Waren auf mehreren B2B-Portalen, speichert die Ergebnisse
+in SQLite und meldet Änderungen seit dem letzten Lauf. Abfragen, Speichern und
+Vergleichen sind Code; ein Agent (`verfuegbarkeits_bericht`) schreibt nur dann
+einen Bericht, wenn sich etwas geändert hat.
+
+```
+--monitor → Workflow b2b_verfuegbarkeit:
+  pruefen (Aktion: alle Portale abfragen, vergleichen, speichern)
+  → aenderungen? → bericht (Agent) → ende
+```
+
+### Konfiguration
+
+Portale und Waren stehen in `config/monitor.yaml`. Jede Ware hat je Portal ihre
+eigene Artikelnummer. Die Datei wird streng geprüft, Tippfehler in Feldnamen
+sind Fehler.
+
+```yaml
+portals:
+  grosshandel_a:
+    name: Großhandel A
+    connector: demo               # Zugriffsart, im Code registriert
+    enabled: true
+    delay_ms: 1000                # Pause zwischen zwei Abfragen dieses Portals
+    credentials:                  # nur Namen von Umgebungsvariablen, nie Werte
+      api_key: PORTAL_A_API_KEY
+    settings: {}                  # Einstellungen des Connectors
+
+products:
+  - id: produkt_001
+    name: Produkt A
+    portals:
+      grosshandel_a: {sku: "4711"}
+
+notifications:
+  on_stock_change: true           # wieder verfügbar / nicht mehr verfügbar
+  on_price_change: true
+  on_delivery_change: false
+  on_check_failure: true
+```
+
+Mitgeliefert ist nur der Test-Connector `demo`, der keine echten Abfragen macht,
+sondern den unter `settings.items` hinterlegten Bestand liefert. Echte Portale
+bekommen je Zugriffsart (API, HTML-Seite, Exportdatei) einen eigenen Connector,
+der `PortalConnector` implementiert und über `Platform.builder(...).connectors(...)`
+registriert wird.
+
+### Ergebnisse
+
+Jede Prüfung endet in einem von drei Zuständen: `verfügbar`, `nicht verfügbar`
+oder `unbekannt` mit Fehlergrund. Eine fehlgeschlagene Abfrage zählt nie als
+„nicht verfügbar“. Änderungen werden gegen das letzte bekannte Ergebnis
+erkannt, sodass ein zwischenzeitlicher Fehler keine Scheinänderung erzeugt. Ein
+neuer Abfragefehler wird einmal gemeldet. Die erste Prüfung einer Ware ist
+keine Änderung. Preise werden exakt (als Dezimalzahl) gespeichert und
+verglichen.
+
+Die Historie liegt in `data/monitor.db` (änderbar über `monitor.database`).
+Portale werden parallel abgefragt, die Waren eines Portals nacheinander.
+
+### Zeitsteuerung
+
+Der Monitor läuft nicht dauerhaft, sondern wird von außen gestartet, etwa per
+cron alle 30 Minuten:
+
+```
+*/30 * * * * cd /pfad/zu/java-agenten && java -jar target/agenten-0.1.0-SNAPSHOT.jar --monitor >> data/monitor.log 2>&1
+```
+
+Unter macOS geht dasselbe mit einem launchd-Agenten (`StartInterval` 1800).
+Scheitert der Bericht (etwa ohne API-Schlüssel), werden Übersicht und
+Änderungen trotzdem ausgegeben und der Exit-Code ist 1.
 
 ## Stand der Portierung
 
