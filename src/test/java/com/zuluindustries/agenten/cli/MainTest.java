@@ -39,7 +39,8 @@ class MainTest {
     @Test
     void printsUsageWithAgents() {
         assertEquals(1, run());
-        assertTrue(out().contains("Verfügbare Agenten: assistant, aufgaben, workflow_worker"));
+        assertTrue(out().contains("Verfügbare Agenten: assistant, aufgaben, code_entwickler, code_planer, code_reviewer, "
+                + "code_testautor, workflow_worker"));
     }
 
     @Test

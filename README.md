@@ -50,6 +50,9 @@ Eine `.env` im Projektverzeichnis wird gelesen; gesetzte Variablen haben Vorrang
 | `MAX_AGENT_STEPS` | Standardgrenze der Toolschritte | `5` |
 | `AGENT_TIMEZONE` | Zeitzone des Zeitkontexts | `Europe/Berlin` |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` | `INFO` |
+| `SCHWARM_WORKSPACE` | Git-Checkout, in dem der Code-Schwarm arbeitet | – |
+| `SCHWARM_MAVEN` | Maven-Aufruf des Code-Schwarms, z. B. `./mvnw` oder `mvn -o` | `mvn` |
+| `SCHWARM_TEST_TIMEOUT_SECONDS` | Zeitlimit eines Testlaufs | `600` |
 
 ## Konfigurierbare Agenten
 
@@ -71,7 +74,8 @@ Wirksame Konfigurationsbereiche:
   vollständiger JSON-Schema-Standard bis Draft 2020-12 einschließlich `format`)
 
 Mitgeliefert sind `assistant`, `aufgaben` (zwei Skills mit Skill-Routing und
-Fallback-Profil) und `workflow_worker`.
+Fallback-Profil), `workflow_worker` und die vier Agenten des Code-Schwarms
+(`code_planer`, `code_testautor`, `code_entwickler`, `code_reviewer`).
 
 ## Modelle und Preise
 
@@ -120,12 +124,12 @@ Nicht berücksichtigt sind Steuern, Rabatte, Freikontingente (etwa die ersten
 | Paket | Aufgabe | Python-Gegenstück |
 |---|---|---|
 | `agent` | Agentendefinition, YAML-Loader, Registry | `agents/definition.py`, `loader.py`, `registry.py` |
-| `tool` | Tool-Schnittstelle, Sicherheitskategorien, Registry, Beispiel-Tools | `tools/registry.py`, `tools/tasks.py` |
+| `tool` | Tool-Schnittstelle, Sicherheitskategorien, Registry, Beispiel-Tools, Datei-Tools (`tool.workspace`) | `tools/registry.py`, `tools/tasks.py` |
 | `skill` | SKILL.md-Loader, Freigabe, Routing-Tool `activate_skill` | `skills/` |
 | `core` | Richtlinien, Instruktionen, Ausgabeprüfung, Agentic Loop, Fallback, Gesprächsverlauf | `core/` |
 | `model` | Provider-Abstraktion, Modellkatalog (`config/models.yaml`), Kostenrechner | `models/`, `cost_calculator.py` |
 | `workflow` | Workflow-Definitionen, Aktionen, Engine, Ablage | `workflows/` |
-| `service` | Service-Manifeste und Registry | `platform_core/services.py` |
+| `service` | Service-Manifeste und Registry; `service.code` ist der Code-Schwarm | `platform_core/services.py` |
 | `cli` | Kommandozeile | `main.py` |
 
 `Platform` verdrahtet alles (Composition Root) und lässt sich über den Builder
@@ -188,6 +192,45 @@ platform.workflows().continueWorkflow(run.runId, true, null, false);
 Läufe werden über `WorkflowRunRepository` gespeichert. Enthalten ist eine
 speicherbasierte Ablage, die sich wie eine Datenbank verhält (flüchtige Daten
 gehen beim erneuten Laden verloren).
+
+## Code-Schwarm
+
+Der Service `code_schwarm` lässt vier Agenten Java-Code in einem Maven-Projekt
+entwickeln. Ob der Code taugt, entscheidet `mvn test`, nicht ein Modell; am Ende
+gibt ein Mensch frei.
+
+| Schritt | Wer | Was |
+|---|---|---|
+| `plan` | `code_planer` (claude-sonnet) | liest den Code, schreibt `.schwarm/plan.md` |
+| `tests_schreiben` | `code_testautor` (claude-sonnet) | schreibt JUnit-Tests zum Plan, bevor es Code gibt |
+| `entwickeln_n` | `code_entwickler` (claude-sonnet) | setzt den Plan um; ab Runde 2 mit der Maven-Ausgabe als Eingabe |
+| `testen_n`, `pruefen_n` | Aktion `run_maven_tests` | `mvn -B test`; rot führt zurück zum Entwickler, höchstens 3 Runden |
+| `diff` | Aktion `workspace_diff` | `git diff HEAD` plus neue Dateien |
+| `review` | `code_reviewer` (claude-haiku) | prüft den Diff, empfiehlt freigeben oder überarbeiten |
+| `freigabe` | Mensch | Freigabeschritt der Workflow-Engine |
+
+```bash
+git clone <projekt> /pfad/zum/checkout
+export SCHWARM_WORKSPACE=/pfad/zum/checkout
+java -jar target/agenten-0.1.0-SNAPSHOT.jar --workflow code_entwicklung '{"task": "Füge eine Methode ... hinzu"}'
+cd /pfad/zum/checkout && git diff     # Ergebnis prüfen, selbst committen oder verwerfen
+```
+
+Der Lauf endet im Status `waiting_for_approval` mit dem Bericht des Reviewers.
+Die Kommandozeile setzt Läufe nicht fort; geprüft und übernommen wird direkt im
+Checkout. Nach drei roten Runden schlägt der Lauf fehl, der Zwischenstand bleibt
+im Checkout. Budget: höchstens 3 USD und 60 Minuten je Lauf (`limits` im Workflow).
+
+Leitplanken:
+
+- Die Agenten haben nur `list_files`, `read_file` und `write_file` (der Reviewer
+  nur lesend). Pfade müssen im Arbeitsverzeichnis bleiben; `..`, absolute Pfade,
+  `.git` und Symlinks nach außen werden abgelehnt. Ein Löschtool gibt es nicht.
+- Agenten führen keine Befehle aus. Maven und Git startet nur der Workflow.
+- `mvn test` führt modellgeschriebenen Code aus. Den Schwarm daher nur auf einem
+  eigenen Checkout laufen lassen, nie auf diesem Repository, und für echten
+  Einsatz in einem Container ohne Netz und ohne Zugangsdaten.
+- Es wird nichts committet oder gepusht.
 
 ## Stand der Portierung
 

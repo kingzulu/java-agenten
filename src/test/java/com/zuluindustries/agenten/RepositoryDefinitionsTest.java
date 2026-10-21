@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.nio.file.Path;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -19,9 +20,13 @@ class RepositoryDefinitionsTest {
         Environment environment = Environment.of(Map.of("AGENTEN_HOME", Path.of("").toAbsolutePath().toString()));
         Platform platform = Platform.builder(Settings.load(environment), environment).build();
 
-        assertEquals(3, platform.agents().all().size());
+        assertEquals(7, platform.agents().all().size());
         assertEquals(2, platform.skills().all().size());
         assertTrue(platform.workflows().definitions().containsKey("review_and_approve"));
+        assertTrue(platform.workflows().definitions().containsKey("code_entwicklung"));
+        assertEquals("Code-Schwarm", platform.services().get("code_schwarm").name());
+        platform.services().get("code_schwarm").agents()
+                .forEach(agent -> assertTrue(platform.agents().contains(agent), agent));
 
         for (AgentDefinition agent : platform.agents().all().values()) {
             assertTrue(platform.profiles().contains(agent.model().profile()), agent.id());
@@ -32,5 +37,8 @@ class RepositoryDefinitionsTest {
         platform.workflows().definitions().values().forEach(definition -> definition.steps().values().stream()
                 .filter(step -> step.agent() != null)
                 .forEach(step -> assertTrue(platform.agents().contains(step.agent()), step.agent())));
+        platform.workflows().definitions().values().forEach(definition -> definition.steps().values().stream()
+                .filter(step -> step.action() != null)
+                .forEach(step -> assertDoesNotThrow(() -> platform.actions().get(step.action()), step.action())));
     }
 }

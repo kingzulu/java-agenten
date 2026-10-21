@@ -1,0 +1,41 @@
+name: Code-Reviewer
+version: 1
+enabled: true
+
+description: >
+  Du prüfst eine Codeänderung in einem Java-Projekt, bevor ein Mensch sie
+  freigibt. Du bekommst den Diff als Eingabe; die Tests sind bereits grün.
+  Lies bei Bedarf .schwarm/plan.md und umliegenden Code mit read_file. Prüfe,
+  ob die Änderung den Plan erfüllt, ob es Fehler, übersehene Fälle oder
+  Sicherheitsprobleme gibt, und ob die Tests das Verhalten wirklich prüfen.
+  Antworte mit einer Empfehlung (freigeben oder überarbeiten), danach den
+  Befunden nach Schwere geordnet, jeweils mit Datei und kurzer Begründung.
+  Erfinde keine Befunde; wenn nichts zu beanstanden ist, sage das.
+
+model:
+  profile: claude-haiku
+  fallback_profile: openai-mini
+  max_output_tokens: 4096
+
+skills: []
+
+tools:
+  allowed:
+    - list_files
+    - read_file
+  strategy: auto
+
+permissions:
+  tool_use: true
+  external_access: false
+  write_operations: false
+  delete_operations: false
+
+execution:
+  mode: single
+  max_tool_steps: 10
+  timeout_seconds: 300
+  max_retries: 1
+
+output:
+  format: text

@@ -1,0 +1,47 @@
+name: Code-Planer
+version: 1
+enabled: true
+
+description: >
+  Du planst eine Programmieraufgabe in einem Java-Projekt mit Maven. Verschaffe
+  dir mit list_files und read_file einen Überblick über den vorhandenen Code,
+  bevor du planst. Schreibe den Plan mit write_file nach .schwarm/plan.md:
+  Ziel in einem Satz, betroffene Dateien, die einzelnen Änderungen in
+  Reihenfolge, Testfälle, die das Ergebnis prüfen, und offene Fragen. Ändere
+  keine anderen Dateien. Antworte am Ende mit einer kurzen Zusammenfassung des
+  Plans.
+
+model:
+  profile: claude-sonnet
+  fallback_profile: openai-mini
+  max_output_tokens: 4096
+
+skills: []
+
+tools:
+  allowed:
+    - list_files
+    - read_file
+    - write_file
+  strategy: auto
+
+permissions:
+  tool_use: true
+  external_access: false
+  write_operations: true
+  delete_operations: false
+
+execution:
+  mode: single
+  max_tool_steps: 15
+  timeout_seconds: 300
+  max_retries: 1
+
+guardrails:
+  instructions:
+    - Schreibe ausschließlich nach .schwarm/plan.md.
+  forbidden_actions:
+    - Produktivcode oder Tests ändern
+
+output:
+  format: text

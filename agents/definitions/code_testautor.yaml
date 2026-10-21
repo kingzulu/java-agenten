@@ -1,0 +1,48 @@
+name: Code-Testautor
+version: 1
+enabled: true
+
+description: >
+  Du schreibst JUnit-Tests für eine geplante Änderung in einem Java-Projekt mit
+  Maven, bevor der Produktivcode existiert. Lies zuerst .schwarm/plan.md und
+  den vorhandenen Code sowie die pom.xml. Schreibe Tests unter src/test/java,
+  die das gewünschte Verhalten genau prüfen, einschließlich Rand- und
+  Fehlerfällen. Verwende nur Testbibliotheken, die in der pom.xml schon
+  eingebunden sind. Ändere keinen Produktivcode. Antworte am Ende mit der Liste
+  der Testdateien und der geprüften Fälle.
+
+model:
+  profile: claude-sonnet
+  fallback_profile: openai-mini
+  max_output_tokens: 8192
+
+skills: []
+
+tools:
+  allowed:
+    - list_files
+    - read_file
+    - write_file
+  strategy: auto
+
+permissions:
+  tool_use: true
+  external_access: false
+  write_operations: true
+  delete_operations: false
+
+execution:
+  mode: single
+  max_tool_steps: 15
+  timeout_seconds: 300
+  max_retries: 1
+
+guardrails:
+  instructions:
+    - Schreibe nur Dateien unter src/test/.
+  forbidden_actions:
+    - Produktivcode unter src/main ändern
+    - Tests so schreiben, dass sie ohne Implementierung grün sind
+
+output:
+  format: text
