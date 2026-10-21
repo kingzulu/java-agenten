@@ -1,0 +1,127 @@
+# Code-Schwarm: Planer, Testautor, Entwickler und Reviewer arbeiten im Git-Checkout
+# aus SCHWARM_WORKSPACE. Ob der Code taugt, entscheidet `mvn test`, nicht ein Modell.
+# Die Entwicklerschleife ist ausgeschrieben, damit die Rundenzahl genau begrenzt ist.
+#
+# Eingabe: {"task": "<Programmieraufgabe>"}
+name: Code-Entwicklung
+version: 1
+enabled: true
+initial_step: plan
+
+limits:
+  max_steps: 16
+  timeout_seconds: 3600
+  max_cost_microusd: 3000000
+
+steps:
+  plan:
+    kind: agent
+    agent: code_planer
+    prompt: Plane die Aufgabe aus der Workflow-Eingabe und schreibe den Plan nach .schwarm/plan.md.
+    next: tests_schreiben
+
+  tests_schreiben:
+    kind: agent
+    agent: code_testautor
+    prompt: Schreibe die Tests zum Plan in .schwarm/plan.md.
+    next: entwickeln_1
+
+  entwickeln_1:
+    kind: agent
+    agent: code_entwickler
+    prompt: >
+      Setze den Plan in .schwarm/plan.md um, sodass alle Tests grün werden.
+    next: testen_1
+
+  testen_1:
+    kind: action
+    action: run_maven_tests
+    result_mapping:
+      tests.passed: passed
+      tests.exit_code: exit_code
+      tests.timed_out: timed_out
+      tests.summary: summary
+      tests.tail: tail
+    next: pruefen_1
+
+  pruefen_1:
+    kind: condition
+    path: output.tests.passed
+    operator: truthy
+    on_true: diff
+    on_false: entwickeln_2
+
+  entwickeln_2:
+    kind: agent
+    agent: code_entwickler
+    prompt: >
+      Runde 2: Die Tests sind noch rot. Das Ergebnis des vorherigen Schritts enthält die Maven-Ausgabe. Behebe die Fehler.
+    next: testen_2
+
+  testen_2:
+    kind: action
+    action: run_maven_tests
+    result_mapping:
+      tests.passed: passed
+      tests.exit_code: exit_code
+      tests.timed_out: timed_out
+      tests.summary: summary
+      tests.tail: tail
+    next: pruefen_2
+
+  pruefen_2:
+    kind: condition
+    path: output.tests.passed
+    operator: truthy
+    on_true: diff
+    on_false: entwickeln_3
+
+  entwickeln_3:
+    kind: agent
+    agent: code_entwickler
+    prompt: >
+      Runde 3: Die Tests sind noch rot. Das Ergebnis des vorherigen Schritts enthält die Maven-Ausgabe. Behebe die Fehler.
+    next: testen_3
+
+  testen_3:
+    kind: action
+    action: run_maven_tests
+    result_mapping:
+      tests.passed: passed
+      tests.exit_code: exit_code
+      tests.timed_out: timed_out
+      tests.summary: summary
+      tests.tail: tail
+    next: pruefen_3
+
+  pruefen_3:
+    kind: condition
+    path: output.tests.passed
+    operator: truthy
+    on_true: diff
+    on_false: abbruch
+
+  abbruch:
+    kind: action
+    action: abort_workflow
+    parameters:
+      message: Die Tests sind nach 3 Entwicklerrunden noch rot; der Zwischenstand liegt im Arbeitsverzeichnis.
+    next: ende
+
+  diff:
+    kind: action
+    action: workspace_diff
+    next: review
+
+  review:
+    kind: agent
+    agent: code_reviewer
+    prompt: Prüfe den Diff aus dem vorherigen Schritt und gib eine Empfehlung für die Freigabe.
+    next: freigabe
+
+  freigabe:
+    kind: approval
+    next: ende
+
+  ende:
+    kind: end

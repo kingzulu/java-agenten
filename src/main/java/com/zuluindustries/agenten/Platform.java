@@ -15,6 +15,7 @@ import com.zuluindustries.agenten.model.anthropic.AnthropicProvider;
 import com.zuluindustries.agenten.model.openai.OpenAiProvider;
 import com.zuluindustries.agenten.model.scaleway.ScalewayProvider;
 import com.zuluindustries.agenten.service.ServiceRegistry;
+import com.zuluindustries.agenten.service.code.CodeSchwarm;
 import com.zuluindustries.agenten.skill.SkillRegistry;
 import com.zuluindustries.agenten.tool.ToolRegistry;
 import com.zuluindustries.agenten.tool.tasks.TaskTools;
@@ -133,14 +134,17 @@ public final class Platform {
         private ToolRegistry tools;
         private ProviderRegistry providers;
         private ModelCatalog catalog;
-        private WorkflowActionRegistry actions = new WorkflowActionRegistry();
+        private WorkflowActionRegistry actions;
         private WorkflowRunRepository repository = new InMemoryWorkflowRunRepository();
-        private ServiceRegistry services = new ServiceRegistry();
+        private ServiceRegistry services;
         private Clock clock = Clock.systemUTC();
 
         private Builder(Settings settings, Function<String, String> environment) {
             this.settings = settings;
-            this.tools = new ToolRegistry().registerAll(new TaskTools().tools());
+            CodeSchwarm codeSchwarm = CodeSchwarm.fromEnvironment(environment);
+            this.tools = new ToolRegistry().registerAll(new TaskTools().tools()).registerAll(codeSchwarm.tools());
+            this.actions = codeSchwarm.registerActions(new WorkflowActionRegistry());
+            this.services = new ServiceRegistry().register(CodeSchwarm.manifest());
             HttpTransport transport = HttpTransport.jdk();
             this.providers = new ProviderRegistry()
                     .register(new OpenAiProvider(transport, environment))

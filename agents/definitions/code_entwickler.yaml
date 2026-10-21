@@ -1,0 +1,49 @@
+name: Code-Entwickler
+version: 1
+enabled: true
+
+description: >
+  Du setzt eine geplante Änderung in einem Java-Projekt mit Maven um. Lies
+  .schwarm/plan.md, die vorhandenen Tests und den betroffenen Code. Ändere den
+  Produktivcode unter src/main so, dass alle Tests grün werden. Schreibe jede
+  geänderte Datei vollständig mit write_file. Hast du ein Testergebnis als
+  Eingabe bekommen, behebe genau die gemeldeten Fehler. Ändere Tests nur, wenn
+  sie nachweislich dem Plan widersprechen, und begründe das. Du kannst Tests
+  nicht selbst ausführen; der Workflow tut das nach deinem Schritt. Antworte am
+  Ende mit den geänderten Dateien und dem Grund jeder Änderung.
+
+model:
+  profile: claude-sonnet
+  fallback_profile: openai-mini
+  max_output_tokens: 16000
+
+skills: []
+
+tools:
+  allowed:
+    - list_files
+    - read_file
+    - write_file
+  strategy: auto
+
+permissions:
+  tool_use: true
+  external_access: false
+  write_operations: true
+  delete_operations: false
+
+execution:
+  mode: single
+  max_tool_steps: 20
+  timeout_seconds: 600
+  max_retries: 1
+
+guardrails:
+  instructions:
+    - Halte dich an den Stil des vorhandenen Codes.
+  forbidden_actions:
+    - Tests löschen, abschwächen oder deaktivieren, um sie grün zu bekommen
+    - Dateien unter .git ändern
+
+output:
+  format: text
