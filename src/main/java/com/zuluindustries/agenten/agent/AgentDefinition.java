@@ -15,6 +15,7 @@ public record AgentDefinition(
         Boolean enabled,
         String description,
         ModelConfig model,
+        List<String> capabilities,
         List<String> skills,
         ToolConfig tools,
         ExecutionConfig execution,
@@ -30,6 +31,7 @@ public record AgentDefinition(
         enabled = enabled == null || enabled;
         description = description == null ? DEFAULT_DESCRIPTION : description;
         model = model == null ? ModelConfig.defaults() : model;
+        capabilities = capabilities == null ? List.of() : List.copyOf(capabilities);
         skills = skills == null ? List.of() : List.copyOf(skills);
         tools = tools == null ? ToolConfig.defaults() : tools;
         execution = execution == null ? ExecutionConfig.defaults() : execution;
@@ -43,7 +45,7 @@ public record AgentDefinition(
     public static AgentDefinition defaultAssistant(String modelProfile) {
         return new AgentDefinition(null, null, null, null, null,
                 new ModelConfig(modelProfile, null, null, null, null),
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
     }
 
     /** Die Agenteninstruktionen (YAML-Feld {@code description}). */
@@ -52,7 +54,7 @@ public record AgentDefinition(
     }
 
     public AgentDefinition withIdentity(String newId, String newName) {
-        return new AgentDefinition(newId, newName, version, enabled, description, model, skills,
+        return new AgentDefinition(newId, newName, version, enabled, description, model, capabilities, skills,
                 tools, execution, permissions, guardrails, context, output);
     }
 }

@@ -1,10 +1,14 @@
 package com.zuluindustries.agenten;
 
+import com.zuluindustries.agenten.agent.AgentDefinition;
 import com.zuluindustries.agenten.agent.AgentRegistry;
+import com.zuluindustries.agenten.builder.AgentBuilder;
+import com.zuluindustries.agenten.builder.AgentDefinitionWriter;
 import com.zuluindustries.agenten.core.AgentPolicy;
 import com.zuluindustries.agenten.core.AgentResult;
 import com.zuluindustries.agenten.core.AgentRunner;
 import com.zuluindustries.agenten.core.AgentRuntime;
+import com.zuluindustries.agenten.core.Conversation;
 import com.zuluindustries.agenten.core.Settings;
 import com.zuluindustries.agenten.model.CostCalculator;
 import com.zuluindustries.agenten.model.HttpTransport;
@@ -47,6 +51,8 @@ public final class Platform {
     private final ModelProfiles profiles;
     private final CostCalculator costs;
     private final AgentRunner runner;
+    private final AgentDefinitionWriter definitionWriter;
+    private final AgentBuilder agentBuilder;
     private final WorkflowActionRegistry actions;
     private final WorkflowEngine workflows;
     private final ServiceRegistry services;
@@ -56,6 +62,12 @@ public final class Platform {
         this.settings = builder.settings;
         Path root = settings.projectRoot();
         this.tools = builder.tools;
+        // write_agent_definition prüft gegen Profile, Tools und Richtlinien, die erst unten entstehen.
+        this.definitionWriter = new AgentDefinitionWriter(root.resolve("agents").resolve("definitions"),
+                this::definitionChecks);
+        if (!tools.contains(AgentDefinitionWriter.TOOL_NAME)) {
+            tools.register(definitionWriter.tool());
+        }
         this.skills = SkillRegistry.fromDirectory(root.resolve("skills"));
         this.agents = AgentRegistry.fromDirectory(root.resolve("agents").resolve("definitions"));
         this.catalog = builder.catalog != null ? builder.catalog : ModelCatalog.load(root);
@@ -64,6 +76,7 @@ public final class Platform {
         AgentPolicy policy = new AgentPolicy(tools, root, settings.agentTimezone(), builder.clock);
         AgentRuntime runtime = new AgentRuntime(tools, skills, policy);
         this.runner = new AgentRunner(runtime, profiles, builder.providers);
+        this.agentBuilder = new AgentBuilder(agents, policy, definitionWriter);
         this.actions = builder.actions;
         this.services = builder.services;
         MonitorConfig monitorConfig = MonitorConfig.loadIfPresent(root);
@@ -80,8 +93,7 @@ public final class Platform {
 
             @Override
             public AgentResult run(String agentName, String prompt) {
-                return runner.run(agents.get(agentName, settings.defaultModelProfile()), prompt,
-                        settings.maxAgentSteps());
+                return runAgent(agents.get(agentName, settings.defaultModelProfile()), prompt, null);
             }
         };
         this.workflows = new WorkflowEngine(builder.repository,
@@ -123,6 +135,32 @@ public final class Platform {
 
     public AgentRunner runner() {
         return runner;
+    }
+
+    private AgentDefinitionWriter.Checks definitionChecks() {
+        return new AgentDefinitionWriter.Checks(profiles, runner.runtime().capabilities(), runner.runtime().policy());
+    }
+
+    public AgentDefinitionWriter definitionWriter() {
+        return definitionWriter;
+    }
+
+    public AgentBuilder agentBuilder() {
+        return agentBuilder;
+    }
+
+    /**
+     * Führt einen Agenten aus; entspricht {@code run_configured_agent}. Der
+     * {@code agent_builder} läuft dabei über seine feste Steuerung statt über ein Modell
+     * mit Schreibwerkzeug.
+     */
+    public AgentResult runAgent(AgentDefinition agent, String userInput, Conversation conversation) {
+        int maxSteps = settings.maxAgentSteps();
+        if (AgentBuilder.AGENT_ID.equals(agent.id())) {
+            return agentBuilder.run(agent, userInput, (nested, input) -> runner.run(nested, input, maxSteps), false)
+                    .result();
+        }
+        return runner.run(agent, userInput, maxSteps, conversation);
     }
 
     public WorkflowActionRegistry actions() {

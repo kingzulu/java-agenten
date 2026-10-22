@@ -3,6 +3,10 @@ package com.zuluindustries.agenten.cli;
 import com.zuluindustries.agenten.Platform;
 import com.zuluindustries.agenten.agent.AgentDefinition;
 import com.zuluindustries.agenten.agent.MemoryConfig;
+import com.zuluindustries.agenten.builder.AgentBuilder;
+import com.zuluindustries.agenten.builder.AgentCreator;
+import com.zuluindustries.agenten.builder.AgentTemplates;
+import com.zuluindustries.agenten.core.AgentPermissionException;
 import com.zuluindustries.agenten.core.AgentResult;
 import com.zuluindustries.agenten.core.Conversation;
 import com.zuluindustries.agenten.core.ModelCall;
@@ -23,6 +27,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -159,13 +164,13 @@ public final class Main {
             }
         }
 
-        int maxSteps = platform.settings().maxAgentSteps();
         if (!interactive) {
-            AgentResult result = platform.runner().run(agent, userInput, maxSteps);
-            out.println();
-            out.println(result.text());
-            printCosts(platform, result, out);
-            return 0;
+            Outcome outcome = runSelected(platform, agent, userInput, null, out, err);
+            if (outcome.result() == null) {
+                return 1;
+            }
+            printCosts(platform, outcome.result(), out);
+            return outcome.definitionError() ? 1 : 0;
         }
 
         out.println();
@@ -200,9 +205,10 @@ public final class Main {
             if (line.isEmpty()) {
                 continue;
             }
-            AgentResult result = platform.runner().run(agent, line, maxSteps, conversation);
-            out.println();
-            out.println(result.text());
+            AgentResult result = runSelected(platform, agent, line, conversation, out, err).result();
+            if (result == null) {
+                continue;
+            }
             List<CostCalculator.Costs> costs = printCosts(platform, result, out);
             sessionIn += result.inputTokens();
             sessionOut += result.outputTokens();
@@ -223,6 +229,50 @@ public final class Main {
         sessionCosts.forEach((currency, amount) ->
                 out.println(String.format(Locale.ROOT, "Kosten der Session: %.8f %s", amount, currency)));
         return 0;
+    }
+
+    /** Ergebnis eines Agentenlaufs; {@code result} ist {@code null}, wenn der Lauf nicht starten konnte. */
+    private record Outcome(AgentResult result, boolean definitionError) {
+    }
+
+    /**
+     * Führt den gewählten Agenten aus und gibt seinen Text aus. Wie in {@code main.py}
+     * erzeugt der agent_creator_agent zuerst über den prompt_agent einen Prompt und
+     * speichert seine Definition anschließend; der agent_builder speichert selbst.
+     */
+    private static Outcome runSelected(Platform platform, AgentDefinition agent, String input,
+                                       Conversation conversation, PrintStream out, PrintStream err) {
+        int maxSteps = platform.settings().maxAgentSteps();
+        try {
+            if (AgentBuilder.CREATOR_AGENT.equals(agent.id())) {
+                AgentCreator.Result created = AgentCreator.run(
+                        (nested, text) -> platform.runner().run(nested, text, maxSteps),
+                        platform.agents().get(AgentBuilder.PROMPT_AGENT, null), agent, input);
+                AgentResult result = created.result();
+                out.println();
+                out.println(result.text());
+                if (result.failed()) {
+                    return new Outcome(result, true);
+                }
+                try {
+                    Path saved = AgentTemplates.save(result.text(), created.generatedPrompt(),
+                            platform.settings().projectRoot().resolve("agents").resolve("definitions"));
+                    out.println();
+                    out.println("Definition gespeichert: " + saved);
+                    return new Outcome(result, false);
+                } catch (IllegalArgumentException | UncheckedIOException error) {
+                    err.println("Definition konnte nicht gespeichert werden: " + error.getMessage());
+                    return new Outcome(result, true);
+                }
+            }
+            AgentResult result = platform.runAgent(agent, input, conversation);
+            out.println();
+            out.println(result.text());
+            return new Outcome(result, AgentBuilder.AGENT_ID.equals(agent.id()) && result.failed());
+        } catch (IllegalArgumentException | AgentPermissionException error) {
+            err.println("Fehler: " + error.getMessage());
+            return new Outcome(null, true);
+        }
     }
 
     private int runWorkflow(Platform platform, String[] args, PrintStream out, PrintStream err) {

@@ -63,6 +63,7 @@ mit einer Fehlermeldung abgelehnt.
 Wirksame Konfigurationsbereiche:
 
 - `model`: Profil, Temperatur, Ausgabelimit und Fallback-Profil
+- `capabilities`: Fähigkeitskennungen als Liste von Texten
 - `tools` und `skills`: Freigaben, Sperren und automatische Toolauswahl
 - `execution`: Toolschritte, Lösungsversuche, Timeout, Retries und Fehlerverhalten
 - `permissions`: Tool-, Schreib-, Lösch- und externe Zugriffe sowie Bestätigungspflichten
@@ -72,7 +73,40 @@ Wirksame Konfigurationsbereiche:
   vollständiger JSON-Schema-Standard bis Draft 2020-12 einschließlich `format`)
 
 Mitgeliefert sind `assistant`, `aufgaben` (zwei Skills mit Skill-Routing und
-Fallback-Profil) und `workflow_worker`.
+Fallback-Profil), `workflow_worker`, `verfuegbarkeits_bericht` sowie
+`agent_builder`, `agent_creator_agent` und `prompt_agent` (siehe unten).
+
+### Neue Agenten erzeugen
+
+```bash
+java -jar target/agenten-0.1.0-SNAPSHOT.jar agent_builder "Ein Agent, der Lieferantenangebote vergleicht"
+```
+
+Der `agent_builder` läuft über eine feste Steuerung, nicht als Modell mit
+Schreibwerkzeug:
+
+1. `prompt_agent` schreibt aus der Beschreibung einen Prompt mit neun Abschnitten.
+2. `agent_creator_agent` baut daraus die YAML-Definition und übernimmt den Prompt
+   unverändert als `description`. Er nutzt Modell und Ausführung des Builders.
+3. `write_agent_definition` prüft und speichert das Ergebnis unter
+   `agents/definitions/<id>.yaml`.
+
+Beide inneren Agenten laufen ohne Tools und Berechtigungen. Gespeichert wird nur,
+wenn die Definition deaktiviert ist (`enabled: false`), eine ID in snake_case hat,
+den Prompt unverändert enthält und nur vorhandene Modellprofile, Tools, Skills,
+Wissensquellen und Schemas nennt. Typische Formfehler der Modellausgabe
+(Markdown-Codeblock, `fallback` statt `fallback_profile`, Guardrails als Liste,
+`retries` usw.) werden korrigiert. Vorhandene Dateien werden nie überschrieben.
+Der Builder speichert die Definition vollständig mit allen Standardwerten; er
+braucht dafür `write_agent_definition` in `tools.allowed`, `write_operations: true`
+und keine Bestätigungspflicht für `write`.
+
+`agent_creator_agent` lässt sich auch direkt aufrufen. Dann wird seine
+YAML-Ausgabe nach denselben Formprüfungen so gespeichert, wie das Modell sie
+geliefert hat.
+
+Die Tokens und Kosten aller Modellaufrufe werden zusammen ausgewiesen. Schlägt
+das Speichern fehl, endet die Kommandozeile mit Exit-Code 1.
 
 ## Modelle und Preise
 
@@ -128,6 +162,7 @@ Nicht berücksichtigt sind Steuern, Rabatte, Freikontingente (etwa die ersten
 | `workflow` | Workflow-Definitionen, Aktionen, Engine, Ablage | `workflows/` |
 | `service` | Service-Manifeste und Registry | `platform_core/services.py` |
 | `monitor` | B2B-Verfügbarkeitsmonitor: Konfiguration, Connectoren, Historie, Änderungserkennung | – (neu) |
+| `builder` | Agent Builder, Agent Creator, Prüfung und Speicherung erzeugter Definitionen | `agents/builder.py`, `creator.py`, `template_writer.py`, `tools/agent_definitions.py` |
 | `cli` | Kommandozeile | `main.py` |
 
 `Platform` verdrahtet alles (Composition Root) und lässt sich über den Builder
@@ -276,7 +311,7 @@ Noch nicht portiert:
 
 - Provider Gemini und lokales Modell (Profil `gemini-flash` meldet „Provider nicht verfügbar“)
 - RAG-Quellen (`context.rag_sources` wird mit einer Fehlermeldung abgelehnt)
-- Agent Builder, Agent Creator und Workflow Creator
+- Workflow Creator und Koordinator (`coordinator`)
 - Datenbankpersistenz (SQLite/Alembic), Nutzungsjournal, Kunden, Benutzer und Audit
 - HTTP-API und Portal, Prüfberichte, Gutachten und Transkription
 - Lotto-Lern-Tools; die Aufgaben-Tools speichern im Speicher statt in SQLite
