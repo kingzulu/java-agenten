@@ -31,6 +31,7 @@ java -jar target/agenten-0.1.0-SNAPSHOT.jar <agent-id> "<aufgabe>"    # Einmal-M
 java -jar target/agenten-0.1.0-SNAPSHOT.jar <agent-id>                # interaktiver Modus
 java -jar target/agenten-0.1.0-SNAPSHOT.jar --show-config <agent-id>
 java -jar target/agenten-0.1.0-SNAPSHOT.jar --workflow <key> '{"task": "..."}'
+java -jar target/agenten-0.1.0-SNAPSHOT.jar --monitor                 # ein Lauf des Verfügbarkeitsmonitors
 ```
 
 Nach jedem Lauf werden Tokenverbrauch, lokal berechnete Listenpreiskosten und der
@@ -62,6 +63,7 @@ mit einer Fehlermeldung abgelehnt.
 Wirksame Konfigurationsbereiche:
 
 - `model`: Profil, Temperatur, Ausgabelimit und Fallback-Profil
+- `capabilities`: Fähigkeitskennungen als Liste von Texten
 - `tools` und `skills`: Freigaben, Sperren und automatische Toolauswahl
 - `execution`: Toolschritte, Lösungsversuche, Timeout, Retries und Fehlerverhalten
 - `permissions`: Tool-, Schreib-, Lösch- und externe Zugriffe sowie Bestätigungspflichten
@@ -71,7 +73,40 @@ Wirksame Konfigurationsbereiche:
   vollständiger JSON-Schema-Standard bis Draft 2020-12 einschließlich `format`)
 
 Mitgeliefert sind `assistant`, `aufgaben` (zwei Skills mit Skill-Routing und
-Fallback-Profil) und `workflow_worker`.
+Fallback-Profil), `workflow_worker`, `verfuegbarkeits_bericht` sowie
+`agent_builder`, `agent_creator_agent` und `prompt_agent` (siehe unten).
+
+### Neue Agenten erzeugen
+
+```bash
+java -jar target/agenten-0.1.0-SNAPSHOT.jar agent_builder "Ein Agent, der Lieferantenangebote vergleicht"
+```
+
+Der `agent_builder` läuft über eine feste Steuerung, nicht als Modell mit
+Schreibwerkzeug:
+
+1. `prompt_agent` schreibt aus der Beschreibung einen Prompt mit neun Abschnitten.
+2. `agent_creator_agent` baut daraus die YAML-Definition und übernimmt den Prompt
+   unverändert als `description`. Er nutzt Modell und Ausführung des Builders.
+3. `write_agent_definition` prüft und speichert das Ergebnis unter
+   `agents/definitions/<id>.yaml`.
+
+Beide inneren Agenten laufen ohne Tools und Berechtigungen. Gespeichert wird nur,
+wenn die Definition deaktiviert ist (`enabled: false`), eine ID in snake_case hat,
+den Prompt unverändert enthält und nur vorhandene Modellprofile, Tools, Skills,
+Wissensquellen und Schemas nennt. Typische Formfehler der Modellausgabe
+(Markdown-Codeblock, `fallback` statt `fallback_profile`, Guardrails als Liste,
+`retries` usw.) werden korrigiert. Vorhandene Dateien werden nie überschrieben.
+Der Builder speichert die Definition vollständig mit allen Standardwerten; er
+braucht dafür `write_agent_definition` in `tools.allowed`, `write_operations: true`
+und keine Bestätigungspflicht für `write`.
+
+`agent_creator_agent` lässt sich auch direkt aufrufen. Dann wird seine
+YAML-Ausgabe nach denselben Formprüfungen so gespeichert, wie das Modell sie
+geliefert hat.
+
+Die Tokens und Kosten aller Modellaufrufe werden zusammen ausgewiesen. Schlägt
+das Speichern fehl, endet die Kommandozeile mit Exit-Code 1.
 
 ## Modelle und Preise
 
@@ -126,6 +161,8 @@ Nicht berücksichtigt sind Steuern, Rabatte, Freikontingente (etwa die ersten
 | `model` | Provider-Abstraktion, Modellkatalog (`config/models.yaml`), Kostenrechner | `models/`, `cost_calculator.py` |
 | `workflow` | Workflow-Definitionen, Aktionen, Engine, Ablage | `workflows/` |
 | `service` | Service-Manifeste und Registry | `platform_core/services.py` |
+| `monitor` | B2B-Verfügbarkeitsmonitor: Konfiguration, Connectoren, Historie, Änderungserkennung | – (neu) |
+| `builder` | Agent Builder, Agent Creator, Prüfung und Speicherung erzeugter Definitionen | `agents/builder.py`, `creator.py`, `template_writer.py`, `tools/agent_definitions.py` |
 | `cli` | Kommandozeile | `main.py` |
 
 `Platform` verdrahtet alles (Composition Root) und lässt sich über den Builder
@@ -189,6 +226,81 @@ Läufe werden über `WorkflowRunRepository` gespeichert. Enthalten ist eine
 speicherbasierte Ablage, die sich wie eine Datenbank verhält (flüchtige Daten
 gehen beim erneuten Laden verloren).
 
+## B2B-Verfügbarkeitsmonitor
+
+Prüft konfigurierte Waren auf mehreren B2B-Portalen, speichert die Ergebnisse
+in SQLite und meldet Änderungen seit dem letzten Lauf. Abfragen, Speichern und
+Vergleichen sind Code; ein Agent (`verfuegbarkeits_bericht`) schreibt nur dann
+einen Bericht, wenn sich etwas geändert hat.
+
+```
+--monitor → Workflow b2b_verfuegbarkeit:
+  pruefen (Aktion: alle Portale abfragen, vergleichen, speichern)
+  → aenderungen? → bericht (Agent) → ende
+```
+
+### Konfiguration
+
+Portale und Waren stehen in `config/monitor.yaml`. Jede Ware hat je Portal ihre
+eigene Artikelnummer. Die Datei wird streng geprüft, Tippfehler in Feldnamen
+sind Fehler.
+
+```yaml
+portals:
+  grosshandel_a:
+    name: Großhandel A
+    connector: demo               # Zugriffsart, im Code registriert
+    enabled: true
+    delay_ms: 1000                # Pause zwischen zwei Abfragen dieses Portals
+    credentials:                  # nur Namen von Umgebungsvariablen, nie Werte
+      api_key: PORTAL_A_API_KEY
+    settings: {}                  # Einstellungen des Connectors
+
+products:
+  - id: produkt_001
+    name: Produkt A
+    portals:
+      grosshandel_a: {sku: "4711"}
+
+notifications:
+  on_stock_change: true           # wieder verfügbar / nicht mehr verfügbar
+  on_price_change: true
+  on_delivery_change: false
+  on_check_failure: true
+```
+
+Mitgeliefert ist nur der Test-Connector `demo`, der keine echten Abfragen macht,
+sondern den unter `settings.items` hinterlegten Bestand liefert. Echte Portale
+bekommen je Zugriffsart (API, HTML-Seite, Exportdatei) einen eigenen Connector,
+der `PortalConnector` implementiert und über `Platform.builder(...).connectors(...)`
+registriert wird.
+
+### Ergebnisse
+
+Jede Prüfung endet in einem von drei Zuständen: `verfügbar`, `nicht verfügbar`
+oder `unbekannt` mit Fehlergrund. Eine fehlgeschlagene Abfrage zählt nie als
+„nicht verfügbar“. Änderungen werden gegen das letzte bekannte Ergebnis
+erkannt, sodass ein zwischenzeitlicher Fehler keine Scheinänderung erzeugt. Ein
+neuer Abfragefehler wird einmal gemeldet. Die erste Prüfung einer Ware ist
+keine Änderung. Preise werden exakt (als Dezimalzahl) gespeichert und
+verglichen.
+
+Die Historie liegt in `data/monitor.db` (änderbar über `monitor.database`).
+Portale werden parallel abgefragt, die Waren eines Portals nacheinander.
+
+### Zeitsteuerung
+
+Der Monitor läuft nicht dauerhaft, sondern wird von außen gestartet, etwa per
+cron alle 30 Minuten:
+
+```
+*/30 * * * * cd /pfad/zu/java-agenten && java -jar target/agenten-0.1.0-SNAPSHOT.jar --monitor >> data/monitor.log 2>&1
+```
+
+Unter macOS geht dasselbe mit einem launchd-Agenten (`StartInterval` 1800).
+Scheitert der Bericht (etwa ohne API-Schlüssel), werden Übersicht und
+Änderungen trotzdem ausgegeben und der Exit-Code ist 1.
+
 ## Stand der Portierung
 
 Portiert ist der Plattformkern: Agentendefinitionen, Tool- und Skill-System,
@@ -199,7 +311,7 @@ Noch nicht portiert:
 
 - Provider Gemini und lokales Modell (Profil `gemini-flash` meldet „Provider nicht verfügbar“)
 - RAG-Quellen (`context.rag_sources` wird mit einer Fehlermeldung abgelehnt)
-- Agent Builder, Agent Creator und Workflow Creator
+- Workflow Creator und Koordinator (`coordinator`)
 - Datenbankpersistenz (SQLite/Alembic), Nutzungsjournal, Kunden, Benutzer und Audit
 - HTTP-API und Portal, Prüfberichte, Gutachten und Transkription
 - Lotto-Lern-Tools; die Aufgaben-Tools speichern im Speicher statt in SQLite

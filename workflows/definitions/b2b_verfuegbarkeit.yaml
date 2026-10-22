@@ -1,0 +1,42 @@
+name: B2B-Verfügbarkeit prüfen
+version: 1
+enabled: true
+initial_step: pruefen
+
+# Portale abfragen, mit dem letzten Lauf vergleichen und speichern ist Code
+# (Aktion). Nur wenn sich etwas geändert hat, schreibt ein Agent den Bericht.
+limits:
+  max_steps: 4
+  timeout_seconds: 900
+  max_cost_microusd: 50000
+
+steps:
+  pruefen:
+    kind: action
+    action: b2b_verfuegbarkeit_pruefen
+    result_mapping:
+      run_id: run_id
+      geprueft_am: geprueft_am
+      has_changes: has_changes
+      zusammenfassung: zusammenfassung
+      aenderungen: aenderungen
+      tabelle: tabelle
+    next: aenderungen
+
+  aenderungen:
+    kind: condition
+    path: output.has_changes
+    operator: truthy
+    on_true: bericht
+    on_false: ende
+
+  bericht:
+    kind: agent
+    agent: verfuegbarkeits_bericht
+    prompt: >
+      Erstelle aus dem Ergebnis der Verfügbarkeitsprüfung einen kurzen Bericht
+      über die Änderungen seit dem letzten Lauf.
+    next: ende
+
+  ende:
+    kind: end
