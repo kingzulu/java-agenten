@@ -21,7 +21,7 @@ class RepositoryDefinitionsTest {
         Environment environment = Environment.of(Map.of("AGENTEN_HOME", Path.of("").toAbsolutePath().toString()));
         Platform platform = Platform.builder(Settings.load(environment), environment).build();
 
-        assertEquals(7, platform.agents().all().size());
+        assertEquals(9, platform.agents().all().size());
         assertEquals(2, platform.skills().all().size());
         assertTrue(platform.workflows().definitions().containsKey("review_and_approve"));
         assertTrue(platform.workflows().definitions().containsKey(AvailabilityMonitor.WORKFLOW));

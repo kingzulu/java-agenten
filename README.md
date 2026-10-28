@@ -30,6 +30,7 @@ java -jar target/agenten-0.1.0-SNAPSHOT.jar "<frage>"                 # Standard
 java -jar target/agenten-0.1.0-SNAPSHOT.jar <agent-id> "<aufgabe>"    # Einmal-Modus
 java -jar target/agenten-0.1.0-SNAPSHOT.jar <agent-id>                # interaktiver Modus
 java -jar target/agenten-0.1.0-SNAPSHOT.jar --show-config <agent-id>
+java -jar target/agenten-0.1.0-SNAPSHOT.jar coordinator '{"task": "...", "capabilities": ["summarize"]}'
 java -jar target/agenten-0.1.0-SNAPSHOT.jar --workflow <key> '{"task": "..."}'
 java -jar target/agenten-0.1.0-SNAPSHOT.jar --monitor                 # ein Lauf des Verfügbarkeitsmonitors
 ```
@@ -74,7 +75,8 @@ Wirksame Konfigurationsbereiche:
 
 Mitgeliefert sind `assistant`, `aufgaben` (zwei Skills mit Skill-Routing und
 Fallback-Profil), `workflow_worker`, `verfuegbarkeits_bericht` sowie
-`agent_builder`, `agent_creator_agent` und `prompt_agent` (siehe unten).
+`agent_builder`, `agent_creator_agent`, `prompt_agent`, `workflow_creator_agent`
+und `coordinator` (siehe unten).
 
 ### Neue Agenten erzeugen
 
@@ -107,6 +109,57 @@ geliefert hat.
 
 Die Tokens und Kosten aller Modellaufrufe werden zusammen ausgewiesen. Schlägt
 das Speichern fehl, endet die Kommandozeile mit Exit-Code 1.
+
+### Workflow-Gerüste erzeugen
+
+```bash
+java -jar target/agenten-0.1.0-SNAPSHOT.jar workflow_creator_agent \
+  "Zuerst Bundesligaergebnisse lesen, dann nach Siegen und Unentschieden gruppieren und anschließend ausgeben."
+```
+
+Der `workflow_creator_agent` (ohne Tools) erzeugt aus den genannten Schritten ein
+Workflow-YAML. Offene Schritte werden `action`-Schritte mit Platzhaltern
+`todo_<schritt>`. `WorkflowTemplates` prüft das Ergebnis gegen die
+Workflow-Definition und speichert es unter `workflows/definitions/<name>.yaml`
+(Umlaute umgeschrieben, bei vorhandener Datei `_2`, `_3`, ...; nie überschreibend).
+Ein Markdown-Codeblock wird entfernt, eine Schrittliste mit `id` in die
+Objektform gebracht und ein fehlender technischer Endschritt `complete` ergänzt.
+Das Gerüst muss `enabled: false` haben: Die Platzhalter-Actions müssen erst im
+Code registriert werden, bevor der Workflow aktiviert wird.
+
+### Coordinator
+
+```bash
+java -jar target/agenten-0.1.0-SNAPSHOT.jar coordinator '{"task": "Fasse den Text zusammen: ...", "capabilities": ["summarize"]}'
+```
+
+Der `coordinator` ist eine feste, sequenzielle Steuerung (kein Modell mit Tools,
+kein paralleler Scheduler):
+
+1. Kandidaten sind alle aktivierten Agenten, deren `capabilities` alle geforderten
+   Fähigkeiten enthalten (exakte Übereinstimmung, Beschreibungen zählen nicht),
+   nach ID sortiert. `coordinator`, `agent_builder`, `agent_creator_agent` und
+   `prompt_agent` sind reserviert.
+2. Jeder Kandidat läuft ohne Tools, Skills, Wissensquellen, Retries und Fallback.
+   Das Ergebnis muss sein Ausgabeformat erfüllen; danach prüft ein werkzeugloser
+   Aufruf (`prompt_agent` mit eigener Prüfanweisung), ob es die Aufgabe erfüllt.
+   Diese Bewertung ist probabilistisch, kein fachlicher Beweis.
+3. Akzeptiert keiner, erzeugt der Agent Builder im Entwurfsmodus eine Definition.
+   Sie wird nicht gespeichert; Status `waiting_for_approval` liefert das YAML und
+   einen SHA-256-Digest der normalisierten Definition.
+
+Registriert wird ein Entwurf nur über `platform.coordinator().registerProposal(definition, digest)`
+nach ausdrücklicher menschlicher Freigabe genau dieser Definition. Der Aufruf
+prüft Modellprofile, Tools (nur vorhandene), Skills (keine) und Ressourcen,
+überschreibt keine IDs und registriert nur im laufenden Prozess. Eine Freigabe
+kommt nie aus einer Modellantwort oder der Coordinator-Eingabe.
+
+Grenzen je Lauf (`Coordinator.Limits`): 6 Modellaufrufe, 32000 berichtete Tokens,
+120 Sekunden. Ausgabetokens und Timeout werden auf das Restbudget gesetzt. Das
+Tokenbudget ist eine Stoppschwelle, keine Abrechnungsgrenze. Tokens und Kosten
+aller Aufrufe, auch fehlgeschlagener, werden je Modell und Währung ausgewiesen.
+Verschachtelte Coordinator-Läufe werden blockiert; Workflow-Agentenschritte
+lehnen den `coordinator` vor jedem Modellaufruf ab.
 
 ## Modelle und Preise
 
@@ -159,10 +212,11 @@ Nicht berücksichtigt sind Steuern, Rabatte, Freikontingente (etwa die ersten
 | `skill` | SKILL.md-Loader, Freigabe, Routing-Tool `activate_skill` | `skills/` |
 | `core` | Richtlinien, Instruktionen, Ausgabeprüfung, Agentic Loop, Fallback, Gesprächsverlauf | `core/` |
 | `model` | Provider-Abstraktion, Modellkatalog (`config/models.yaml`), Kostenrechner | `models/`, `cost_calculator.py` |
-| `workflow` | Workflow-Definitionen, Aktionen, Engine, Ablage | `workflows/` |
+| `workflow` | Workflow-Definitionen, Aktionen, Engine, Ablage, Gerüste des Workflow Creators | `workflows/` |
 | `service` | Service-Manifeste und Registry | `platform_core/services.py` |
 | `monitor` | B2B-Verfügbarkeitsmonitor: Konfiguration, Connectoren, Historie, Änderungserkennung | – (neu) |
 | `builder` | Agent Builder, Agent Creator, Prüfung und Speicherung erzeugter Definitionen | `agents/builder.py`, `creator.py`, `template_writer.py`, `tools/agent_definitions.py` |
+| `coordinator` | Sequenzielle Delegation über Fähigkeiten, Entwurf und Freigabe neuer Agenten | `agents/coordinator.py` |
 | `cli` | Kommandozeile | `main.py` |
 
 `Platform` verdrahtet alles (Composition Root) und lässt sich über den Builder
@@ -305,13 +359,13 @@ Scheitert der Bericht (etwa ohne API-Schlüssel), werden Übersicht und
 
 Portiert ist der Plattformkern: Agentendefinitionen, Tool- und Skill-System,
 Richtlinien und Berechtigungen, Agent-Runtime mit Fallback, die Provider OpenAI,
-Anthropic und Scaleway, Kostenberechnung, Workflow-Engine und Service-Katalog.
+Anthropic und Scaleway, Kostenberechnung, Workflow-Engine und Service-Katalog,
+Agent Builder, Workflow Creator und Coordinator.
 
 Noch nicht portiert:
 
 - Provider Gemini und lokales Modell (Profil `gemini-flash` meldet „Provider nicht verfügbar“)
 - RAG-Quellen (`context.rag_sources` wird mit einer Fehlermeldung abgelehnt)
-- Workflow Creator und Koordinator (`coordinator`)
 - Datenbankpersistenz (SQLite/Alembic), Nutzungsjournal, Kunden, Benutzer und Audit
 - HTTP-API und Portal, Prüfberichte, Gutachten und Transkription
 - Lotto-Lern-Tools; die Aufgaben-Tools speichern im Speicher statt in SQLite

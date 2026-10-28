@@ -6,6 +6,7 @@ import com.zuluindustries.agenten.agent.MemoryConfig;
 import com.zuluindustries.agenten.builder.AgentBuilder;
 import com.zuluindustries.agenten.builder.AgentCreator;
 import com.zuluindustries.agenten.builder.AgentTemplates;
+import com.zuluindustries.agenten.coordinator.Coordinator;
 import com.zuluindustries.agenten.core.AgentPermissionException;
 import com.zuluindustries.agenten.core.AgentResult;
 import com.zuluindustries.agenten.core.Conversation;
@@ -20,6 +21,7 @@ import com.zuluindustries.agenten.skill.Skill;
 import com.zuluindustries.agenten.util.Environment;
 import com.zuluindustries.agenten.util.Json;
 import com.zuluindustries.agenten.workflow.WorkflowRun;
+import com.zuluindustries.agenten.workflow.WorkflowTemplates;
 
 import java.io.BufferedReader;
 import java.io.FileDescriptor;
@@ -46,6 +48,7 @@ import java.util.Map;
  *   agenten "&lt;frage&gt;"
  *   agenten &lt;agent&gt; "&lt;aufgabe&gt;"
  *   agenten &lt;agent&gt;                      (interaktiver Modus)
+ *   agenten coordinator '{"task": "...", "capabilities": ["..."]}'
  *   agenten --show-config &lt;agent&gt;
  *   agenten --workflow &lt;key&gt; '&lt;json-eingabe&gt;'
  *   agenten --monitor                      (ein Lauf des B2B-Verfügbarkeitsmonitors)
@@ -235,10 +238,15 @@ public final class Main {
     private record Outcome(AgentResult result, boolean definitionError) {
     }
 
+    /** Der workflow_creator_agent; sein Workflow-Gerüst wird anschließend gespeichert. */
+    static final String WORKFLOW_CREATOR_AGENT = "workflow_creator_agent";
+
     /**
      * Führt den gewählten Agenten aus und gibt seinen Text aus. Wie in {@code main.py}
      * erzeugt der agent_creator_agent zuerst über den prompt_agent einen Prompt und
-     * speichert seine Definition anschließend; der agent_builder speichert selbst.
+     * speichert seine Definition anschließend; der agent_builder speichert selbst. Das
+     * Gerüst des workflow_creator_agent landet deaktiviert in {@code workflows/definitions}.
+     * Der coordinator zeigt seinen Status und bei einem Entwurf den Freigabe-Digest.
      */
     private static Outcome runSelected(Platform platform, AgentDefinition agent, String input,
                                        Conversation conversation, PrintStream out, PrintStream err) {
@@ -265,9 +273,41 @@ public final class Main {
                     return new Outcome(result, true);
                 }
             }
+            if (Coordinator.AGENT_ID.equals(agent.id())) {
+                Coordinator.Result coordinated = platform.runCoordinator(input);
+                out.println();
+                out.println("Status: " + coordinated.status().key());
+                if (coordinated.agent() != null) {
+                    out.println("Agent: " + coordinated.agent());
+                }
+                out.println();
+                out.println(coordinated.text());
+                if (coordinated.proposalDigest() != null) {
+                    out.println();
+                    out.println("Freigabe-Digest (SHA-256): " + coordinated.proposalDigest());
+                    out.println("Der Entwurf wurde nicht gespeichert und ist nicht registriert.");
+                }
+                return new Outcome(coordinated.asAgentResult(), coordinated.status() == Coordinator.Status.FAILED);
+            }
             AgentResult result = platform.runAgent(agent, input, conversation);
             out.println();
             out.println(result.text());
+            if (WORKFLOW_CREATOR_AGENT.equals(agent.id())) {
+                if (result.failed()) {
+                    return new Outcome(result, true);
+                }
+                try {
+                    Path saved = WorkflowTemplates.save(result.text(),
+                            platform.settings().projectRoot().resolve("workflows").resolve("definitions"));
+                    out.println();
+                    out.println("Workflow-Gerüst gespeichert: " + saved);
+                    out.println("Der Workflow ist zunächst deaktiviert (enabled: false).");
+                    return new Outcome(result, false);
+                } catch (IllegalArgumentException | UncheckedIOException error) {
+                    err.println("Workflow-Gerüst konnte nicht gespeichert werden: " + error.getMessage());
+                    return new Outcome(result, true);
+                }
+            }
             return new Outcome(result, AgentBuilder.AGENT_ID.equals(agent.id()) && result.failed());
         } catch (IllegalArgumentException | AgentPermissionException error) {
             err.println("Fehler: " + error.getMessage());
@@ -409,6 +449,7 @@ public final class Main {
         out.println("  agenten \"<frage>\"");
         out.println("  agenten <agent> \"<frage>\"");
         out.println("  agenten <agent>");
+        out.println("  agenten coordinator '{\"task\": \"<aufgabe>\", \"capabilities\": [\"<faehigkeit>\"]}'");
         out.println("  agenten --show-config <agent>");
         out.println("  agenten --workflow <key> '<json-eingabe>'");
         out.println("  agenten --monitor");

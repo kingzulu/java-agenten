@@ -4,6 +4,7 @@ import com.zuluindustries.agenten.agent.AgentDefinition;
 import com.zuluindustries.agenten.agent.AgentRegistry;
 import com.zuluindustries.agenten.builder.AgentBuilder;
 import com.zuluindustries.agenten.builder.AgentDefinitionWriter;
+import com.zuluindustries.agenten.coordinator.Coordinator;
 import com.zuluindustries.agenten.core.AgentPolicy;
 import com.zuluindustries.agenten.core.AgentResult;
 import com.zuluindustries.agenten.core.AgentRunner;
@@ -53,6 +54,7 @@ public final class Platform {
     private final AgentRunner runner;
     private final AgentDefinitionWriter definitionWriter;
     private final AgentBuilder agentBuilder;
+    private final Coordinator coordinator;
     private final WorkflowActionRegistry actions;
     private final WorkflowEngine workflows;
     private final ServiceRegistry services;
@@ -77,6 +79,7 @@ public final class Platform {
         AgentRuntime runtime = new AgentRuntime(tools, skills, policy);
         this.runner = new AgentRunner(runtime, profiles, builder.providers);
         this.agentBuilder = new AgentBuilder(agents, policy, definitionWriter);
+        this.coordinator = new Coordinator(agents, agentBuilder, policy, profiles, tools);
         this.actions = builder.actions;
         this.services = builder.services;
         MonitorConfig monitorConfig = MonitorConfig.loadIfPresent(root);
@@ -149,13 +152,27 @@ public final class Platform {
         return agentBuilder;
     }
 
+    public Coordinator coordinator() {
+        return coordinator;
+    }
+
+    /** Ein Coordinator-Lauf mit den Standardgrenzen; {@code userInput} ist JSON mit task und capabilities. */
+    public Coordinator.Result runCoordinator(String userInput) {
+        int maxSteps = settings.maxAgentSteps();
+        return coordinator.run(userInput, (nested, input) -> runner.run(nested, input, maxSteps),
+                Coordinator.Limits.defaults());
+    }
+
     /**
      * Führt einen Agenten aus; entspricht {@code run_configured_agent}. Der
-     * {@code agent_builder} läuft dabei über seine feste Steuerung statt über ein Modell
-     * mit Schreibwerkzeug.
+     * {@code agent_builder} und der {@code coordinator} laufen dabei über ihre feste
+     * Steuerung statt über ein Modell mit Werkzeugen.
      */
     public AgentResult runAgent(AgentDefinition agent, String userInput, Conversation conversation) {
         int maxSteps = settings.maxAgentSteps();
+        if (Coordinator.AGENT_ID.equals(agent.id())) {
+            return runCoordinator(userInput).asAgentResult();
+        }
         if (AgentBuilder.AGENT_ID.equals(agent.id())) {
             return agentBuilder.run(agent, userInput, (nested, input) -> runner.run(nested, input, maxSteps), false)
                     .result();

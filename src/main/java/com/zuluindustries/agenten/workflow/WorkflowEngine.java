@@ -1,5 +1,6 @@
 package com.zuluindustries.agenten.workflow;
 
+import com.zuluindustries.agenten.coordinator.Coordinator;
 import com.zuluindustries.agenten.core.AgentResult;
 import com.zuluindustries.agenten.model.CostCalculator;
 import com.zuluindustries.agenten.util.Json;
@@ -272,6 +273,10 @@ public final class WorkflowEngine {
     // ------------------------------------------------------------------
 
     private String runAgentStep(WorkflowRun run, WorkflowStep step, WorkflowStepRun stepRun, String transientOutput) {
+        if (Coordinator.AGENT_ID.equals(step.agent())) {
+            throw new IllegalArgumentException("Coordinator benötigt strukturierte Eingabe und einen separaten "
+                    + "Freigabehandler; verwende den Coordinator-Einstieg über die CLI.");
+        }
         if (!agents.knows(step.agent())) {
             throw new IllegalArgumentException("Unbekannter Workflow-Agent '" + step.agent() + "'.");
         }
