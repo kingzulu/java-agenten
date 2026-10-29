@@ -111,6 +111,12 @@ public final class Main {
                 return command.run(platform, List.of(args).subList(1, args.length), out, err);
             }
         }
+        if (args[0].startsWith("--")) {
+            // Etwa --monitor ohne eingebundenes Modul: kein Modellaufruf mit der Option als Frage.
+            err.println("Fehler: Unbekannte Option '" + args[0] + "'. Ist das zugehörige Fachmodul eingebunden?");
+            printUsage(platform, out);
+            return 1;
+        }
 
         String agentName;
         String userInput;
