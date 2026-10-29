@@ -1,10 +1,14 @@
 package com.zuluindustries.agenten;
 
+import com.zuluindustries.agenten.agent.AgentDefinition;
 import com.zuluindustries.agenten.agent.AgentRegistry;
+import com.zuluindustries.agenten.builder.AgentBuilder;
+import com.zuluindustries.agenten.builder.AgentDefinitionWriter;
 import com.zuluindustries.agenten.core.AgentPolicy;
 import com.zuluindustries.agenten.core.AgentResult;
 import com.zuluindustries.agenten.core.AgentRunner;
 import com.zuluindustries.agenten.core.AgentRuntime;
+import com.zuluindustries.agenten.core.Conversation;
 import com.zuluindustries.agenten.core.Settings;
 import com.zuluindustries.agenten.model.CostCalculator;
 import com.zuluindustries.agenten.model.HttpTransport;
@@ -14,6 +18,10 @@ import com.zuluindustries.agenten.model.ProviderRegistry;
 import com.zuluindustries.agenten.model.anthropic.AnthropicProvider;
 import com.zuluindustries.agenten.model.openai.OpenAiProvider;
 import com.zuluindustries.agenten.model.scaleway.ScalewayProvider;
+import com.zuluindustries.agenten.monitor.AvailabilityMonitor;
+import com.zuluindustries.agenten.monitor.ConnectorRegistry;
+import com.zuluindustries.agenten.monitor.MonitorConfig;
+import com.zuluindustries.agenten.monitor.MonitorStore;
 import com.zuluindustries.agenten.service.ServiceRegistry;
 import com.zuluindustries.agenten.skill.SkillRegistry;
 import com.zuluindustries.agenten.tool.ToolRegistry;
@@ -43,14 +51,23 @@ public final class Platform {
     private final ModelProfiles profiles;
     private final CostCalculator costs;
     private final AgentRunner runner;
+    private final AgentDefinitionWriter definitionWriter;
+    private final AgentBuilder agentBuilder;
     private final WorkflowActionRegistry actions;
     private final WorkflowEngine workflows;
     private final ServiceRegistry services;
+    private final AvailabilityMonitor monitor;
 
     private Platform(Builder builder) {
         this.settings = builder.settings;
         Path root = settings.projectRoot();
         this.tools = builder.tools;
+        // write_agent_definition prüft gegen Profile, Tools und Richtlinien, die erst unten entstehen.
+        this.definitionWriter = new AgentDefinitionWriter(root.resolve("agents").resolve("definitions"),
+                this::definitionChecks);
+        if (!tools.contains(AgentDefinitionWriter.TOOL_NAME)) {
+            tools.register(definitionWriter.tool());
+        }
         this.skills = SkillRegistry.fromDirectory(root.resolve("skills"));
         this.agents = AgentRegistry.fromDirectory(root.resolve("agents").resolve("definitions"));
         this.catalog = builder.catalog != null ? builder.catalog : ModelCatalog.load(root);
@@ -59,8 +76,15 @@ public final class Platform {
         AgentPolicy policy = new AgentPolicy(tools, root, settings.agentTimezone(), builder.clock);
         AgentRuntime runtime = new AgentRuntime(tools, skills, policy);
         this.runner = new AgentRunner(runtime, profiles, builder.providers);
+        this.agentBuilder = new AgentBuilder(agents, policy, definitionWriter);
         this.actions = builder.actions;
         this.services = builder.services;
+        MonitorConfig monitorConfig = MonitorConfig.loadIfPresent(root);
+        this.monitor = monitorConfig == null ? null : new AvailabilityMonitor(monitorConfig, builder.connectors,
+                new MonitorStore(root.resolve(monitorConfig.monitor().database())), builder.environment, builder.clock);
+        if (monitor != null) {
+            actions.register(AvailabilityMonitor.ACTION, monitor::runAsAction);
+        }
         AgentStepExecutor executor = new AgentStepExecutor() {
             @Override
             public boolean knows(String agentName) {
@@ -69,8 +93,7 @@ public final class Platform {
 
             @Override
             public AgentResult run(String agentName, String prompt) {
-                return runner.run(agents.get(agentName, settings.defaultModelProfile()), prompt,
-                        settings.maxAgentSteps());
+                return runAgent(agents.get(agentName, settings.defaultModelProfile()), prompt, null);
             }
         };
         this.workflows = new WorkflowEngine(builder.repository,
@@ -114,6 +137,32 @@ public final class Platform {
         return runner;
     }
 
+    private AgentDefinitionWriter.Checks definitionChecks() {
+        return new AgentDefinitionWriter.Checks(profiles, runner.runtime().capabilities(), runner.runtime().policy());
+    }
+
+    public AgentDefinitionWriter definitionWriter() {
+        return definitionWriter;
+    }
+
+    public AgentBuilder agentBuilder() {
+        return agentBuilder;
+    }
+
+    /**
+     * Führt einen Agenten aus; entspricht {@code run_configured_agent}. Der
+     * {@code agent_builder} läuft dabei über seine feste Steuerung statt über ein Modell
+     * mit Schreibwerkzeug.
+     */
+    public AgentResult runAgent(AgentDefinition agent, String userInput, Conversation conversation) {
+        int maxSteps = settings.maxAgentSteps();
+        if (AgentBuilder.AGENT_ID.equals(agent.id())) {
+            return agentBuilder.run(agent, userInput, (nested, input) -> runner.run(nested, input, maxSteps), false)
+                    .result();
+        }
+        return runner.run(agent, userInput, maxSteps, conversation);
+    }
+
     public WorkflowActionRegistry actions() {
         return actions;
     }
@@ -126,20 +175,28 @@ public final class Platform {
         return services;
     }
 
+    /** B2B-Verfügbarkeitsmonitor; {@code null}, wenn {@code config/monitor.yaml} fehlt. */
+    public AvailabilityMonitor monitor() {
+        return monitor;
+    }
+
     /** Konfigurierbarer Aufbau; Standardwerte entsprechen dem Python-Projekt. */
     public static final class Builder {
 
         private final Settings settings;
+        private final Function<String, String> environment;
         private ToolRegistry tools;
         private ProviderRegistry providers;
         private ModelCatalog catalog;
         private WorkflowActionRegistry actions = new WorkflowActionRegistry();
         private WorkflowRunRepository repository = new InMemoryWorkflowRunRepository();
         private ServiceRegistry services = new ServiceRegistry();
+        private ConnectorRegistry connectors = ConnectorRegistry.defaults();
         private Clock clock = Clock.systemUTC();
 
         private Builder(Settings settings, Function<String, String> environment) {
             this.settings = settings;
+            this.environment = environment;
             this.tools = new ToolRegistry().registerAll(new TaskTools().tools());
             HttpTransport transport = HttpTransport.jdk();
             this.providers = new ProviderRegistry()
@@ -176,6 +233,12 @@ public final class Platform {
 
         public Builder services(ServiceRegistry value) {
             this.services = value;
+            return this;
+        }
+
+        /** Zugriffsarten für Portale des Verfügbarkeitsmonitors. */
+        public Builder connectors(ConnectorRegistry value) {
+            this.connectors = value;
             return this;
         }
 

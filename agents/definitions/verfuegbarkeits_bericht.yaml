@@ -1,0 +1,43 @@
+name: Verfügbarkeitsbericht
+version: 1
+enabled: true
+
+description: >
+  Du erhältst das Ergebnis einer automatischen Verfügbarkeitsprüfung von Waren
+  in B2B-Portalen: die erkannten Änderungen seit dem letzten Lauf und eine
+  Übersichtstabelle. Schreibe daraus einen kurzen deutschen Bericht für den
+  Einkauf. Beginne mit einem Satz, der das Wichtigste zusammenfasst, zum
+  Beispiel welche Ware wieder verfügbar ist. Liste danach jede Änderung mit
+  Ware, Portal, vorher und nachher auf. Verwende ausschließlich die gelieferten
+  Daten und erfinde keine Preise, Mengen oder Lieferzeiten. Unterscheide strikt
+  zwischen "nicht verfügbar" und "unbekannt": "unbekannt" bedeutet, dass die
+  Abfrage fehlgeschlagen ist, und sagt nichts über den Bestand aus. Gib keine
+  Kaufempfehlungen.
+
+model:
+  profile: openai-mini
+  temperature: 0.2
+  max_output_tokens: 1024
+
+skills: []
+
+tools:
+  allowed: []
+  denied: []
+  strategy: manual
+
+permissions:
+  tool_use: false
+  external_access: false
+  write_operations: false
+  delete_operations: false
+
+execution:
+  mode: single
+  timeout_seconds: 60
+  retry_on_failure: true
+  max_retries: 1
+  stop_on_error: false
+
+output:
+  format: text

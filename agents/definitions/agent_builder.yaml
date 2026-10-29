@@ -1,0 +1,31 @@
+id: agent_builder
+name: Agent Builder
+version: 1
+enabled: true
+description: >
+  Erzeuge aus einer Benutzerbeschreibung eine neue Agentendefinition.
+  Die Runtime ruft zuerst prompt_agent und danach den vorhandenen
+  agent_creator_agent für die technischen Felder auf. Anschließend validiert
+  write_agent_definition das Ergebnis und speichert es ohne Überschreiben
+  unter agents/definitions/<id>.yaml. Neue Agenten bleiben zunächst deaktiviert.
+model:
+  profile: openai-mini
+  temperature: 0.1
+  max_output_tokens: 8192
+  fallback_profile: claude-haiku
+execution:
+  mode: single
+  max_iterations: 8
+  timeout_seconds: 60
+  max_retries: 1
+skills: []
+tools:
+  allowed: [write_agent_definition]
+  strategy: auto
+permissions:
+  tool_use: true
+  write_operations: true
+  external_access: false
+  delete_operations: false
+output:
+  format: text

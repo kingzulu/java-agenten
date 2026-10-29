@@ -39,7 +39,7 @@ class MainTest {
     @Test
     void printsUsageWithAgents() {
         assertEquals(1, run());
-        assertTrue(out().contains("Verfügbare Agenten: assistant, aufgaben, workflow_worker"));
+        assertTrue(out().contains("Verfügbare Agenten: agent_builder, agent_creator_agent, assistant, aufgaben, prompt_agent, verfuegbarkeits_bericht, workflow_worker"));
     }
 
     @Test
