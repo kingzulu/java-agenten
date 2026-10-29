@@ -1,7 +1,7 @@
 # B2B-Verfügbarkeitsmonitor: Portale, Waren und Benachrichtigungen.
 #
 # Ein Lauf wird von außen gestartet (cron, launchd), siehe README:
-#   java -jar target/agenten-0.1.0-SNAPSHOT.jar --monitor
+#   java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar --monitor
 #
 # Zugangsdaten stehen nie in dieser Datei. Unter "credentials" steht nur der Name
 # der Umgebungsvariablen (oder des Eintrags in .env), die den Wert enthält.

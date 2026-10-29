@@ -1,5 +1,5 @@
 # Beispielaufruf:
-# java -jar target/agenten-0.1.0-SNAPSHOT.jar workflow_creator_agent \
+# java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar workflow_creator_agent \
 #   "Zuerst Informationen Bundesligaergebnisse lesen, dann diese Ergebnisse nach Siegen und Unentschieden gruppieren und anschließend ausgeben."
 
 name: Workflow Creator Agent
