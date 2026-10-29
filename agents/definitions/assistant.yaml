@@ -17,17 +17,16 @@ model:
 
 skills: []
 
+# Im Kern stehen keine fachlichen Tools bereit. Fachmodule liefern eigene Agenten
+# mit ihren Tools, z. B. den Agenten aufgaben aus agenten-aufgaben.
 tools:
-  allowed:
-    - create_task
-    - complete_task
-    - list_tasks
-  strategy: auto
+  allowed: []
+  strategy: manual
 
 permissions:
-  tool_use: true
+  tool_use: false
   external_access: false
-  write_operations: true
+  write_operations: false
   delete_operations: false
 
 output:

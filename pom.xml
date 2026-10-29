@@ -16,6 +16,8 @@
         <module>agenten-core</module>
         <!-- B2B-Verfügbarkeitsmonitor als Erweiterung des Kerns -->
         <module>agenten-monitor</module>
+        <!-- Aufgabenverwaltung zu Aktenzeichen als Erweiterung des Kerns -->
+        <module>agenten-aufgaben</module>
         <!-- Ausführbare JAR mit Kern und allen Modulen -->
         <module>agenten-app</module>
     </modules>
@@ -46,6 +48,11 @@
             <dependency>
                 <groupId>com.zuluindustries</groupId>
                 <artifactId>agenten-monitor</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.zuluindustries</groupId>
+                <artifactId>agenten-aufgaben</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

@@ -22,9 +22,11 @@ class RepositoryDefinitionsTest {
 
         // Der Kern allein, ohne Fachmodule.
         assertTrue(platform.extensions().isEmpty());
-        assertEquals(8, platform.agents().all().size());
+        assertEquals(7, platform.agents().all().size());
         assertFalse(platform.agents().contains("verfuegbarkeits_bericht"));
-        assertEquals(2, platform.skills().all().size());
+        assertFalse(platform.agents().contains("aufgaben"));
+        assertTrue(platform.skills().all().isEmpty());
+        assertTrue(platform.tools().find("create_task").isEmpty());
         assertTrue(platform.workflows().definitions().containsKey("review_and_approve"));
         assertFalse(platform.workflows().definitions().containsKey("b2b_verfuegbarkeit"));
 

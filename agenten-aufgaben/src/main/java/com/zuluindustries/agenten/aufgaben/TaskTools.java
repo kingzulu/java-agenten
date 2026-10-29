@@ -1,4 +1,4 @@
-package com.zuluindustries.agenten.tool.tasks;
+package com.zuluindustries.agenten.aufgaben;
 
 import com.zuluindustries.agenten.tool.FunctionTool;
 import com.zuluindustries.agenten.tool.Tool;
@@ -12,7 +12,8 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Beispiel-Tools zur Aufgabenverwaltung (Portierung von {@code tools/tasks.py}).
+ * Tools zur Aufgabenverwaltung: {@code create_task}, {@code list_tasks} und
+ * {@code complete_task} (Portierung von {@code tools/tasks.py}).
  *
  * <p>Die Python-Version speichert in SQLite; diese Referenzimplementierung hält
  * die Aufgaben im Speicher, bis ein Persistenzadapter angebunden wird.</p>

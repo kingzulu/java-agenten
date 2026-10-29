@@ -1,6 +1,7 @@
 package com.zuluindustries.agenten.extension;
 
 import com.zuluindustries.agenten.Platform;
+import com.zuluindustries.agenten.tool.Tool;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -15,8 +16,8 @@ import java.util.Map;
  * <p>Module werden über {@link java.util.ServiceLoader} gefunden (Eintrag in
  * {@code META-INF/services/com.zuluindustries.agenten.extension.PlatformExtension}) oder
  * im {@link Platform.Builder} ausdrücklich übergeben. Ein Modul liefert eigene Agenten
- * und Workflows als YAML, registriert nach dem Aufbau seine Workflow-Aktionen und kann
- * Befehle für die Kommandozeile beisteuern.</p>
+ * und Workflows als YAML, eigene Tools und Skills, registriert nach dem Aufbau seine
+ * Workflow-Aktionen und kann Befehle für die Kommandozeile beisteuern.</p>
  */
 public interface PlatformExtension {
 
@@ -30,6 +31,16 @@ public interface PlatformExtension {
 
     /** Workflow-Definitionen als YAML-Text je Workflow-Schlüssel. */
     default Map<String, String> workflowDefinitions() {
+        return Map.of();
+    }
+
+    /** Tools des Moduls; Namen dürfen nicht doppelt vorkommen. */
+    default List<Tool> tools() {
+        return List.of();
+    }
+
+    /** Skills als Inhalt einer {@code SKILL.md} (mit Frontmatter) je Skill-Name. */
+    default Map<String, String> skillDefinitions() {
         return Map.of();
     }
 
