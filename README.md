@@ -15,9 +15,21 @@ Architekturmerkmal.
 - Maven 3.9+
 
 ```bash
-mvn verify                      # Tests und ausführbares JAR
-java -jar target/agenten-0.1.0-SNAPSHOT.jar
+mvn verify                      # alle Module: Tests und ausführbares JAR
+java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar
 ```
+
+Das Projekt besteht aus drei Maven-Modulen:
+
+| Modul | Inhalt |
+|---|---|
+| `agenten-core` | Plattformkern ohne Fachlogik: Agenten, Tools, Skills, Provider, Runtime, Workflow-Engine, Builder, Coordinator, CLI |
+| `agenten-monitor` | B2B-Verfügbarkeitsmonitor (Code, Bericht-Agent, Workflow, `--monitor`) |
+| `agenten-app` | baut Kern und Fachmodule zu einem ausführbaren JAR zusammen |
+
+Der Kern kennt keine Fachmodule. Ein Modul implementiert `PlatformExtension`
+und meldet sich über `META-INF/services` an; siehe „Fachmodule“ unten. Wer ein
+Modul nicht braucht, entfernt seine Abhängigkeit aus `agenten-app/pom.xml`.
 
 Die Tests rufen keine externen Modelle auf.
 
@@ -26,13 +38,13 @@ Die Tests rufen keine externen Modelle auf.
 Die CLI entspricht `main.py`:
 
 ```bash
-java -jar target/agenten-0.1.0-SNAPSHOT.jar "<frage>"                 # Standardassistent
-java -jar target/agenten-0.1.0-SNAPSHOT.jar <agent-id> "<aufgabe>"    # Einmal-Modus
-java -jar target/agenten-0.1.0-SNAPSHOT.jar <agent-id>                # interaktiver Modus
-java -jar target/agenten-0.1.0-SNAPSHOT.jar --show-config <agent-id>
-java -jar target/agenten-0.1.0-SNAPSHOT.jar coordinator '{"task": "...", "capabilities": ["summarize"]}'
-java -jar target/agenten-0.1.0-SNAPSHOT.jar --workflow <key> '{"task": "..."}'
-java -jar target/agenten-0.1.0-SNAPSHOT.jar --monitor                 # ein Lauf des Verfügbarkeitsmonitors
+java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar "<frage>"                 # Standardassistent
+java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar <agent-id> "<aufgabe>"    # Einmal-Modus
+java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar <agent-id>                # interaktiver Modus
+java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar --show-config <agent-id>
+java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar coordinator '{"task": "...", "capabilities": ["summarize"]}'
+java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar --workflow <key> '{"task": "..."}'
+java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar --monitor                 # ein Lauf des Verfügbarkeitsmonitors
 ```
 
 Nach jedem Lauf werden Tokenverbrauch, lokal berechnete Listenpreiskosten und der
@@ -81,7 +93,7 @@ und `coordinator` (siehe unten).
 ### Neue Agenten erzeugen
 
 ```bash
-java -jar target/agenten-0.1.0-SNAPSHOT.jar agent_builder "Ein Agent, der Lieferantenangebote vergleicht"
+java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar agent_builder "Ein Agent, der Lieferantenangebote vergleicht"
 ```
 
 Der `agent_builder` läuft über eine feste Steuerung, nicht als Modell mit
@@ -113,7 +125,7 @@ das Speichern fehl, endet die Kommandozeile mit Exit-Code 1.
 ### Workflow-Gerüste erzeugen
 
 ```bash
-java -jar target/agenten-0.1.0-SNAPSHOT.jar workflow_creator_agent \
+java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar workflow_creator_agent \
   "Zuerst Bundesligaergebnisse lesen, dann nach Siegen und Unentschieden gruppieren und anschließend ausgeben."
 ```
 
@@ -130,7 +142,7 @@ Code registriert werden, bevor der Workflow aktiviert wird.
 ### Coordinator
 
 ```bash
-java -jar target/agenten-0.1.0-SNAPSHOT.jar coordinator '{"task": "Fasse den Text zusammen: ...", "capabilities": ["summarize"]}'
+java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar coordinator '{"task": "Fasse den Text zusammen: ...", "capabilities": ["summarize"]}'
 ```
 
 Der `coordinator` ist eine feste, sequenzielle Steuerung (kein Modell mit Tools,
@@ -214,13 +226,32 @@ Nicht berücksichtigt sind Steuern, Rabatte, Freikontingente (etwa die ersten
 | `model` | Provider-Abstraktion, Modellkatalog (`config/models.yaml`), Kostenrechner | `models/`, `cost_calculator.py` |
 | `workflow` | Workflow-Definitionen, Aktionen, Engine, Ablage, Gerüste des Workflow Creators | `workflows/` |
 | `service` | Service-Manifeste und Registry | `platform_core/services.py` |
-| `monitor` | B2B-Verfügbarkeitsmonitor: Konfiguration, Connectoren, Historie, Änderungserkennung | – (neu) |
 | `builder` | Agent Builder, Agent Creator, Prüfung und Speicherung erzeugter Definitionen | `agents/builder.py`, `creator.py`, `template_writer.py`, `tools/agent_definitions.py` |
 | `coordinator` | Sequenzielle Delegation über Fähigkeiten, Entwurf und Freigabe neuer Agenten | `agents/coordinator.py` |
+| `extension` | Schnittstelle für Fachmodule (`PlatformExtension`, `CliCommand`) | – (neu) |
 | `cli` | Kommandozeile | `main.py` |
 
+Diese Pakete liegen alle in `agenten-core`. Das Paket `monitor` (B2B-Verfügbarkeitsmonitor:
+Konfiguration, Connectoren, Historie, Änderungserkennung) liegt im Modul `agenten-monitor`.
+
 `Platform` verdrahtet alles (Composition Root) und lässt sich über den Builder
-anpassen, etwa mit eigenen Tools, Providern oder einer anderen Workflow-Ablage.
+anpassen, etwa mit eigenen Tools, Providern, Fachmodulen oder einer anderen Workflow-Ablage.
+
+### Fachmodule
+
+Ein Fachmodul ist ein eigenes Maven-Modul, das nur von `agenten-core` abhängt und
+`PlatformExtension` implementiert. Es kann beisteuern:
+
+- Agenten- und Workflow-Definitionen als YAML aus seinen Ressourcen
+  (`agentDefinitions()`, `workflowDefinitions()`); doppelte IDs mit dem
+  Projektverzeichnis oder anderen Modulen sind ein Fehler,
+- Workflow-Aktionen und andere Einrichtung nach dem Aufbau (`install(platform)`),
+- Befehle der Kommandozeile (`commands()`, z. B. `--monitor`).
+
+Angemeldet wird es mit einer Zeile in
+`src/main/resources/META-INF/services/com.zuluindustries.agenten.extension.PlatformExtension`.
+`Platform.builder(...)` findet alle Module auf dem Klassenpfad; mit
+`.extensions(List.of(...))` lassen sie sich ausdrücklich festlegen, etwa in Tests.
 
 ### Agentic Loop
 
@@ -282,6 +313,12 @@ gehen beim erneuten Laden verloren).
 
 ## B2B-Verfügbarkeitsmonitor
 
+Modul `agenten-monitor`; Code unter `agenten-monitor/src/main/java/.../monitor/`,
+Bericht-Agent und Workflow als Ressourcen unter
+`agenten-monitor/src/main/resources/com/zuluindustries/agenten/monitor/`. Die
+Konfiguration `config/monitor.yaml` gehört zum Projektverzeichnis; fehlt sie,
+bleibt der Monitor aus.
+
 Prüft konfigurierte Waren auf mehreren B2B-Portalen, speichert die Ergebnisse
 in SQLite und meldet Änderungen seit dem letzten Lauf. Abfragen, Speichern und
 Vergleichen sind Code; ein Agent (`verfuegbarkeits_bericht`) schreibt nur dann
@@ -326,8 +363,8 @@ notifications:
 Mitgeliefert ist nur der Test-Connector `demo`, der keine echten Abfragen macht,
 sondern den unter `settings.items` hinterlegten Bestand liefert. Echte Portale
 bekommen je Zugriffsart (API, HTML-Seite, Exportdatei) einen eigenen Connector,
-der `PortalConnector` implementiert und über `Platform.builder(...).connectors(...)`
-registriert wird.
+der `PortalConnector` implementiert und in einer `ConnectorRegistry` an
+`new MonitorExtension(connectors)` übergeben wird.
 
 ### Ergebnisse
 
@@ -348,7 +385,7 @@ Der Monitor läuft nicht dauerhaft, sondern wird von außen gestartet, etwa per
 cron alle 30 Minuten:
 
 ```
-*/30 * * * * cd /pfad/zu/java-agenten && java -jar target/agenten-0.1.0-SNAPSHOT.jar --monitor >> data/monitor.log 2>&1
+*/30 * * * * cd /pfad/zu/java-agenten && java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar --monitor >> data/monitor.log 2>&1
 ```
 
 Unter macOS geht dasselbe mit einem launchd-Agenten (`StartInterval` 1800).

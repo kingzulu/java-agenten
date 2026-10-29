@@ -1,5 +1,5 @@
 # Beispielaufruf:
-# java -jar target/agenten-0.1.0-SNAPSHOT.jar agent_creator_agent "Erstelle einen Agenten, der täglich im Internet nach verfügbaren Jobangeboten im Bereich SAP PO oder SAP CPI sucht"
+# java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar agent_creator_agent "Erstelle einen Agenten, der täglich im Internet nach verfügbaren Jobangeboten im Bereich SAP PO oder SAP CPI sucht"
 
 name: Agent Creator Agent
 version: 1
