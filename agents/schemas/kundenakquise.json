@@ -1,4 +1,5 @@
 {
+  "$comment": "`agents/schemas/kundenakquise.json` ist ein Beispiel für ein **Ausgabeschema**. Ein Agent kann in seiner Definition `output: {format: json, schema_name: kundenakquise}` angeben. Dann muss seine Antwort JSON mit den drei Feldern `zielgruppe`, `erster_schritt` und `erwartetes_ergebnis` sein, und die Plattform prüft das gegen diese Datei (`AgentPolicy` sucht Schemas in `agents/schemas/`).\n\nIm Moment benutzt keiner der acht Agenten dieses Schema. Die Datei kam beim ersten Port aus dem Python-Projekt mit. Nur ein Test verwendet den Namen, lädt die Datei aber nicht. Du könntest sie also gefahrlos löschen. Als Vorlage für eigene Schemas ist sie aber ganz praktisch.",
   "type": "object",
   "required": [
     "zielgruppe",
