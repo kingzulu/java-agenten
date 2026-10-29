@@ -23,9 +23,11 @@ import com.zuluindustries.agenten.model.anthropic.AnthropicProvider;
 import com.zuluindustries.agenten.model.openai.OpenAiProvider;
 import com.zuluindustries.agenten.model.scaleway.ScalewayProvider;
 import com.zuluindustries.agenten.service.ServiceRegistry;
+import com.zuluindustries.agenten.skill.Skill;
+import com.zuluindustries.agenten.skill.SkillLoader;
 import com.zuluindustries.agenten.skill.SkillRegistry;
+import com.zuluindustries.agenten.tool.Tool;
 import com.zuluindustries.agenten.tool.ToolRegistry;
-import com.zuluindustries.agenten.tool.tasks.TaskTools;
 import com.zuluindustries.agenten.workflow.AgentStepExecutor;
 import com.zuluindustries.agenten.workflow.InMemoryWorkflowRunRepository;
 import com.zuluindustries.agenten.workflow.WorkflowActionRegistry;
@@ -76,13 +78,22 @@ public final class Platform {
         this.extensions = List.copyOf(builder.extensions != null ? builder.extensions : discoverExtensions());
         Path root = settings.projectRoot();
         this.tools = builder.tools;
+        for (PlatformExtension extension : extensions) {
+            for (Tool tool : extension.tools()) {
+                if (tools.contains(tool.name())) {
+                    throw new IllegalArgumentException("Doppeltes Tool '" + tool.name() + "' (Modul "
+                            + extension.name() + ").");
+                }
+                tools.register(tool);
+            }
+        }
         // write_agent_definition prüft gegen Profile, Tools und Richtlinien, die erst unten entstehen.
         this.definitionWriter = new AgentDefinitionWriter(root.resolve("agents").resolve("definitions"),
                 this::definitionChecks);
         if (!tools.contains(AgentDefinitionWriter.TOOL_NAME)) {
             tools.register(definitionWriter.tool());
         }
-        this.skills = SkillRegistry.fromDirectory(root.resolve("skills"));
+        this.skills = new SkillRegistry(skillDefinitions(root, extensions));
         this.agents = new AgentRegistry(agentDefinitions(root, extensions));
         this.catalog = builder.catalog != null ? builder.catalog : ModelCatalog.load(root);
         this.profiles = catalog.profiles();
@@ -133,6 +144,26 @@ public final class Platform {
             });
         }
         return definitions;
+    }
+
+    /** Skills aus {@code skills/} und aus den Fachmodulen; doppelte Namen sind ein Fehler. */
+    private static List<Skill> skillDefinitions(Path root, List<PlatformExtension> extensions) {
+        Map<String, Skill> skills = new LinkedHashMap<>();
+        SkillLoader.discover(root.resolve("skills")).forEach(skill -> skills.put(skill.name(), skill));
+        for (PlatformExtension extension : extensions) {
+            extension.skillDefinitions().forEach((name, content) -> {
+                String source = "Modul " + extension.name() + ": " + name;
+                Skill skill = SkillLoader.parse(content, null, source);
+                if (skill == null) {
+                    throw new IllegalArgumentException("Ungültige SKILL.md (" + source + ").");
+                }
+                if (skills.putIfAbsent(skill.name(), skill) != null) {
+                    throw new IllegalArgumentException("Doppelter Skill '" + skill.name() + "' (Modul "
+                            + extension.name() + ").");
+                }
+            });
+        }
+        return List.copyOf(skills.values());
     }
 
     /** Workflows aus {@code workflows/definitions} und aus den Fachmodulen; doppelte Schlüssel sind ein Fehler. */
@@ -281,7 +312,7 @@ public final class Platform {
         private Builder(Settings settings, Function<String, String> environment) {
             this.settings = settings;
             this.environment = environment;
-            this.tools = new ToolRegistry().registerAll(new TaskTools().tools());
+            this.tools = new ToolRegistry();
             HttpTransport transport = HttpTransport.jdk();
             this.providers = new ProviderRegistry()
                     .register(new OpenAiProvider(transport, environment))

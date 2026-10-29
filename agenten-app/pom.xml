@@ -24,6 +24,11 @@
             <groupId>com.zuluindustries</groupId>
             <artifactId>agenten-core</artifactId>
         </dependency>
+        <!-- Aufgabenverwaltung zu Aktenzeichen (Agent aufgaben). -->
+        <dependency>
+            <groupId>com.zuluindustries</groupId>
+            <artifactId>agenten-aufgaben</artifactId>
+        </dependency>
         <!-- B2B-Verfügbarkeitsmonitor: derzeit abgeschaltet. Zum Einbinden den Kommentar entfernen.
         <dependency>
             <groupId>com.zuluindustries</groupId>

@@ -6,6 +6,9 @@ import com.zuluindustries.agenten.core.Settings;
 import com.zuluindustries.agenten.model.ProviderRegistry;
 import com.zuluindustries.agenten.support.FakeProvider;
 import com.zuluindustries.agenten.support.Fixtures;
+import com.zuluindustries.agenten.tool.FunctionTool;
+import com.zuluindustries.agenten.tool.Tool;
+import com.zuluindustries.agenten.tool.ToolRegistry;
 import com.zuluindustries.agenten.util.Environment;
 import com.zuluindustries.agenten.workflow.WorkflowRun;
 import org.junit.jupiter.api.BeforeEach;
@@ -139,6 +142,57 @@ class PlatformExtensionTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> platform(new Beispiel(Map.of("beispiel_agent", "description: Du hilfst.\n"))));
         assertTrue(error.getMessage().contains("beispiel_agent"), error.getMessage());
+    }
+
+    /** Ein Modul, das nur ein Tool und einen Skill beisteuert. */
+    static final class Werkzeugmodul implements PlatformExtension {
+
+        @Override
+        public String name() {
+            return "werkzeug";
+        }
+
+        @Override
+        public List<Tool> tools() {
+            return List.of(FunctionTool.of("zaehlen", "Zählt.", Map.of("type", "object"), arguments -> 3));
+        }
+
+        @Override
+        public Map<String, String> skillDefinitions() {
+            return Map.of("zaehler", """
+                    ---
+                    name: zaehler
+                    description: Zählt Dinge.
+                    tools: [zaehlen]
+                    ---
+                    Verwende zaehlen.
+                    """);
+        }
+    }
+
+    @Test
+    void extensionContributesToolsAndSkills() {
+        Platform platform = platform(new Werkzeugmodul());
+
+        assertEquals(3, platform.tools().find("zaehlen").orElseThrow().execute(Map.of()));
+        assertEquals(List.of("zaehlen"), platform.skills().find("zaehler").orElseThrow().tools());
+        assertEquals("Verwende zaehlen.", platform.skills().find("zaehler").orElseThrow().instructions());
+    }
+
+    @Test
+    void duplicateToolsAndSkillsAreRejected() {
+        IllegalArgumentException tool = assertThrows(IllegalArgumentException.class,
+                () -> platform(new Werkzeugmodul(), new Werkzeugmodul()));
+        assertTrue(tool.getMessage().contains("zaehlen"), tool.getMessage());
+
+        Fixtures.write(home.resolve("skills/zaehler/SKILL.md"), "---\nname: zaehler\n---\nLokal.\n");
+        Environment environment = Environment.of(Map.of("AGENTEN_HOME", home.toString()));
+        IllegalArgumentException skill = assertThrows(IllegalArgumentException.class,
+                () -> Platform.builder(Settings.load(environment), environment)
+                        .tools(new ToolRegistry())
+                        .extensions(List.of(new Werkzeugmodul()))
+                        .build());
+        assertTrue(skill.getMessage().contains("zaehler"), skill.getMessage());
     }
 
     @Test

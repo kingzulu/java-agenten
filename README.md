@@ -19,12 +19,13 @@ mvn verify                      # alle Module: Tests und ausführbares JAR
 java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar
 ```
 
-Das Projekt besteht aus drei Maven-Modulen:
+Das Projekt besteht aus vier Maven-Modulen:
 
 | Modul | Inhalt |
 |---|---|
 | `agenten-core` | Plattformkern ohne Fachlogik: Agenten, Tools, Skills, Provider, Runtime, Workflow-Engine, Builder, Coordinator, CLI |
 | `agenten-monitor` | Fachmodul B2B-Verfügbarkeitsmonitor (Code, Bericht-Agent, Workflow, `--monitor`) |
+| `agenten-aufgaben` | Fachmodul Aufgabenverwaltung zu Aktenzeichen (Agent `aufgaben`, zwei Skills, Tools `create_task`, `list_tasks`, `complete_task`) |
 | `agenten-app` | baut den Kern und die eingetragenen Fachmodule zu einem ausführbaren JAR zusammen; enthält selbst keinen Code |
 
 Der Kern kennt keine Fachmodule. Ein Modul implementiert `PlatformExtension`
@@ -33,8 +34,9 @@ Fachmodule im JAR landen, steht allein in den Abhängigkeiten von
 `agenten-app/pom.xml`. Ein Modul wird abgeschaltet, indem man seine Abhängigkeit
 dort auskommentiert; gebaut und getestet wird es weiterhin.
 
-**Aktueller Stand:** Das Monitor-Modul ist in `agenten-app/pom.xml` auskommentiert.
-Das JAR enthält nur den Kern; `--monitor` meldet „Unbekannte Option“.
+**Aktueller Stand:** Das Aufgaben-Modul ist in `agenten-app/pom.xml` eingebunden,
+das Monitor-Modul auskommentiert. Das JAR enthält den Kern und die
+Aufgabenverwaltung; `--monitor` meldet „Unbekannte Option“.
 
 ### Lokal einrichten
 
@@ -76,7 +78,7 @@ Eine `.env` im Projektverzeichnis wird gelesen; gesetzte Variablen haben Vorrang
 
 | Variable | Bedeutung | Standard |
 |---|---|---|
-| `AGENTEN_HOME` | Verzeichnis mit `agents/`, `skills/`, `workflows/` | aktuelles Verzeichnis |
+| `AGENTEN_HOME` | Verzeichnis mit `agents/`, `skills/` (optional), `workflows/` | aktuelles Verzeichnis |
 | `OPENAI_API_KEY` | OpenAI Responses API | – |
 | `ANTHROPIC_API_KEY` | Anthropic Messages API | – |
 | `SCW_SECRET_KEY` | Scaleway Generative APIs | – |
@@ -105,11 +107,12 @@ Wirksame Konfigurationsbereiche:
 - `output`: Text- oder JSON-Ausgabe sowie optionale Schemavalidierung (`agents/schemas/<name>.json`,
   vollständiger JSON-Schema-Standard bis Draft 2020-12 einschließlich `format`)
 
-Mitgeliefert sind `assistant`, `aufgaben` (zwei Skills mit Skill-Routing und
-Fallback-Profil), `workflow_worker` sowie `agent_builder`, `agent_creator_agent`,
-`prompt_agent`, `workflow_creator_agent` und `coordinator` (siehe unten). Der
-Agent `verfuegbarkeits_bericht` gehört zum Monitor-Modul und ist nur mit diesem
-verfügbar.
+Der Kern liefert `assistant` (ohne Tools), `workflow_worker` sowie `agent_builder`,
+`agent_creator_agent`, `prompt_agent`, `workflow_creator_agent` und `coordinator`
+(siehe unten). Der Kern selbst bringt keine fachlichen Tools oder Skills mit. Der
+Agent `aufgaben` (zwei Skills mit Skill-Routing und Fallback-Profil) gehört zum
+Aufgaben-Modul, `verfuegbarkeits_bericht` zum Monitor-Modul; beide sind nur mit
+ihrem Modul verfügbar.
 
 ### Neue Agenten erzeugen
 
@@ -241,7 +244,7 @@ Nicht berücksichtigt sind Steuern, Rabatte, Freikontingente (etwa die ersten
 | Paket | Aufgabe | Python-Gegenstück |
 |---|---|---|
 | `agent` | Agentendefinition, YAML-Loader, Registry | `agents/definition.py`, `loader.py`, `registry.py` |
-| `tool` | Tool-Schnittstelle, Sicherheitskategorien, Registry, Beispiel-Tools | `tools/registry.py`, `tools/tasks.py` |
+| `tool` | Tool-Schnittstelle, Sicherheitskategorien, Registry | `tools/registry.py` |
 | `skill` | SKILL.md-Loader, Freigabe, Routing-Tool `activate_skill` | `skills/` |
 | `core` | Richtlinien, Instruktionen, Ausgabeprüfung, Agentic Loop, Fallback, Gesprächsverlauf | `core/` |
 | `model` | Provider-Abstraktion, Modellkatalog (`config/models.yaml`), Kostenrechner | `models/`, `cost_calculator.py` |
@@ -253,7 +256,8 @@ Nicht berücksichtigt sind Steuern, Rabatte, Freikontingente (etwa die ersten
 | `cli` | Kommandozeile | `main.py` |
 
 Diese Pakete liegen alle in `agenten-core`. Das Paket `monitor` (B2B-Verfügbarkeitsmonitor:
-Konfiguration, Connectoren, Historie, Änderungserkennung) liegt im Modul `agenten-monitor`.
+Konfiguration, Connectoren, Historie, Änderungserkennung) liegt im Modul `agenten-monitor`,
+das Paket `aufgaben` (Aufgaben-Tools, Gegenstück zu `tools/tasks.py`) im Modul `agenten-aufgaben`.
 
 `Platform` verdrahtet alles (Composition Root) und lässt sich über den Builder
 anpassen, etwa mit eigenen Tools, Providern, Fachmodulen oder einer anderen Workflow-Ablage.
@@ -266,6 +270,8 @@ Ein Fachmodul ist ein eigenes Maven-Modul, das nur von `agenten-core` abhängt u
 - Agenten- und Workflow-Definitionen als YAML aus seinen Ressourcen
   (`agentDefinitions()`, `workflowDefinitions()`); doppelte IDs mit dem
   Projektverzeichnis oder anderen Modulen sind ein Fehler,
+- Tools (`tools()`) und Skills als Inhalt einer `SKILL.md` (`skillDefinitions()`);
+  doppelte Tool- oder Skill-Namen sind ein Fehler,
 - Workflow-Aktionen und andere Einrichtung nach dem Aufbau (`install(platform)`),
 - Befehle der Kommandozeile (`commands()`, z. B. `--monitor`).
 
@@ -331,6 +337,22 @@ platform.workflows().continueWorkflow(run.runId, true, null, false);
 Läufe werden über `WorkflowRunRepository` gespeichert. Enthalten ist eine
 speicherbasierte Ablage, die sich wie eine Datenbank verhält (flüchtige Daten
 gehen beim erneuten Laden verloren).
+
+## Aufgabenverwaltung
+
+Modul `agenten-aufgaben`; Code unter `agenten-aufgaben/src/main/java/.../aufgaben/`,
+Agent und Skills als Ressourcen unter
+`agenten-aufgaben/src/main/resources/com/zuluindustries/agenten/aufgaben/`.
+Der Agent `aufgaben` legt Aufgaben zu Aktenzeichen an, wertet sie aus und schließt
+sie ab. Die Aufgaben liegen bisher nur im Speicher des laufenden Prozesses (die
+Python-Version nutzt SQLite).
+
+```bash
+java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar aufgaben "Lege für AZ-1 die Aufgabe 'Angebot prüfen' an"
+```
+
+Abschalten wie beim Monitor: die `agenten-aufgaben`-Abhängigkeit in
+`agenten-app/pom.xml` auskommentieren.
 
 ## B2B-Verfügbarkeitsmonitor
 

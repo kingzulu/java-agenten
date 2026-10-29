@@ -55,6 +55,17 @@ public final class SkillLoader {
         } catch (IOException error) {
             throw new UncheckedIOException(error);
         }
+        return parse(content, file, file.toString());
+    }
+
+    /**
+     * Liest eine SKILL.md aus einem Text, etwa aus einem Fachmodul.
+     *
+     * @param path   Ablageort oder {@code null}, wenn der Skill nicht aus einer Datei stammt
+     * @param source Herkunft für Fehlermeldungen
+     * @return der Skill oder {@code null} ohne gültiges Frontmatter
+     */
+    public static Skill parse(String content, Path path, String source) {
         if (!content.startsWith("---")) {
             return null;
         }
@@ -66,7 +77,7 @@ public final class SkillLoader {
         try {
             metadata = Json.DEFINITIONS_YAML.readTree(parts[1]);
         } catch (IOException error) {
-            throw new IllegalArgumentException("Ungültiges Frontmatter in " + file + ": " + error.getMessage(), error);
+            throw new IllegalArgumentException("Ungültiges Frontmatter in " + source + ": " + error.getMessage(), error);
         }
         if (metadata == null || !metadata.isObject() || !metadata.hasNonNull("name")) {
             return null;
@@ -79,6 +90,6 @@ public final class SkillLoader {
         String description = metadata.hasNonNull("description")
                 ? metadata.get("description").asText().trim().replaceAll("\\s+", " ")
                 : "";
-        return new Skill(metadata.get("name").asText().trim(), description, file, tools, parts[2].strip());
+        return new Skill(metadata.get("name").asText().trim(), description, path, tools, parts[2].strip());
     }
 }
