@@ -44,7 +44,7 @@ java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar <agent-id>              
 java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar --show-config <agent-id>
 java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar coordinator '{"task": "...", "capabilities": ["summarize"]}'
 java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar --workflow <key> '{"task": "..."}'
-java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar --monitor                 # ein Lauf des Verfügbarkeitsmonitors
+java -jar agenten-app/target/agenten-0.1.0-SNAPSHOT.jar --monitor                 # nur mit eingebundenem Monitor-Modul
 ```
 
 Nach jedem Lauf werden Tokenverbrauch, lokal berechnete Listenpreiskosten und der
@@ -318,6 +318,10 @@ Bericht-Agent und Workflow als Ressourcen unter
 `agenten-monitor/src/main/resources/com/zuluindustries/agenten/monitor/`. Die
 Konfiguration `config/monitor.yaml` gehört zum Projektverzeichnis; fehlt sie,
 bleibt der Monitor aus.
+
+Das Modul ist in `agenten-app/pom.xml` derzeit auskommentiert und damit nicht im
+ausführbaren JAR. Zum Einbinden den Kommentar um die `agenten-monitor`-Abhängigkeit
+entfernen und neu bauen. Gebaut und getestet wird das Modul trotzdem bei jedem `mvn verify`.
 
 Prüft konfigurierte Waren auf mehreren B2B-Portalen, speichert die Ergebnisse
 in SQLite und meldet Änderungen seit dem letzten Lauf. Abfragen, Speichern und

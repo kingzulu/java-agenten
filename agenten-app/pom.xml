@@ -24,10 +24,12 @@
             <groupId>com.zuluindustries</groupId>
             <artifactId>agenten-core</artifactId>
         </dependency>
+        <!-- B2B-Verfügbarkeitsmonitor: derzeit abgeschaltet. Zum Einbinden den Kommentar entfernen.
         <dependency>
             <groupId>com.zuluindustries</groupId>
             <artifactId>agenten-monitor</artifactId>
         </dependency>
+        -->
     </dependencies>
 
     <build>

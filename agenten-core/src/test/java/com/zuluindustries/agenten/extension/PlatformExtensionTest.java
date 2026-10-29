@@ -147,5 +147,11 @@ class PlatformExtensionTest {
 
         assertTrue(platform.extensions().isEmpty());
         assertTrue(platform.commands().isEmpty());
+        // Eine Option eines fehlenden Moduls wird abgelehnt, nicht als Frage an ein Modell geschickt.
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        assertEquals(1, new Main().run(platform, new String[] {"--monitor"}, new PrintStream(new ByteArrayOutputStream()),
+                new PrintStream(err, true, StandardCharsets.UTF_8)));
+        assertTrue(err.toString(StandardCharsets.UTF_8).contains("Unbekannte Option '--monitor'"));
+        assertTrue(openai.requests.isEmpty());
     }
 }
