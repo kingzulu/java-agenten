@@ -1,0 +1,18 @@
+# Beispielaufruf:
+# java -jar target/agenten-0.1.0-SNAPSHOT.jar coordinator '{"task": "Fasse den folgenden Text zusammen: ...", "capabilities": ["summarize"]}'
+#
+# Der Coordinator läuft über seine feste Steuerung (Coordinator.java), nicht als Modell.
+# Er wählt nur Agenten, die alle geforderten capabilities deklarieren.
+
+id: coordinator
+name: Coordinator
+description: Koordiniert Aufgaben anhand expliziter Fähigkeiten mit begrenzter sequenzieller Delegation.
+model:
+  profile: openai-mini
+skills: []
+tools:
+  allowed: []
+  strategy: manual
+permissions:
+  tool_use: false
+  write_operations: false

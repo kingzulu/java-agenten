@@ -3,16 +3,20 @@ package com.zuluindustries.agenten.agent;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
-/** Registrierte, aktivierte Agenten; entspricht {@code agents/registry.py} und {@code core/agent_config.py}. */
+/**
+ * Registrierte, aktivierte Agenten; entspricht {@code agents/registry.py} und {@code core/agent_config.py}.
+ * Zur Laufzeit kommen nur über {@link #register} weitere Agenten hinzu; vorhandene werden nie ersetzt.
+ */
 public final class AgentRegistry {
 
     private final Map<String, AgentDefinition> agents;
 
     public AgentRegistry(Map<String, AgentDefinition> agents) {
-        this.agents = Collections.unmodifiableMap(new LinkedHashMap<>(agents));
+        this.agents = Collections.synchronizedMap(new LinkedHashMap<>(agents));
     }
 
     public static AgentRegistry fromDirectory(Path directory) {
@@ -34,15 +38,27 @@ public final class AgentRegistry {
         return definition;
     }
 
+    /** Registriert einen neuen Agenten prozesslokal; eine vorhandene ID wird nicht überschrieben. */
+    public void register(AgentDefinition definition) {
+        if (agents.putIfAbsent(definition.id(), definition) != null) {
+            throw new IllegalArgumentException("Agent-ID existiert bereits.");
+        }
+    }
+
     public boolean contains(String agentName) {
         return agents.containsKey(agentName);
     }
 
     public Set<String> names() {
-        return agents.keySet();
+        synchronized (agents) {
+            return Collections.unmodifiableSet(new LinkedHashSet<>(agents.keySet()));
+        }
     }
 
+    /** Momentaufnahme aller Agenten in Registrierungsreihenfolge. */
     public Map<String, AgentDefinition> all() {
-        return agents;
+        synchronized (agents) {
+            return Collections.unmodifiableMap(new LinkedHashMap<>(agents));
+        }
     }
 }
