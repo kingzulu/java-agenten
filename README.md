@@ -24,12 +24,32 @@ Das Projekt besteht aus drei Maven-Modulen:
 | Modul | Inhalt |
 |---|---|
 | `agenten-core` | Plattformkern ohne Fachlogik: Agenten, Tools, Skills, Provider, Runtime, Workflow-Engine, Builder, Coordinator, CLI |
-| `agenten-monitor` | B2B-Verfügbarkeitsmonitor (Code, Bericht-Agent, Workflow, `--monitor`) |
-| `agenten-app` | baut Kern und Fachmodule zu einem ausführbaren JAR zusammen |
+| `agenten-monitor` | Fachmodul B2B-Verfügbarkeitsmonitor (Code, Bericht-Agent, Workflow, `--monitor`) |
+| `agenten-app` | baut den Kern und die eingetragenen Fachmodule zu einem ausführbaren JAR zusammen; enthält selbst keinen Code |
 
 Der Kern kennt keine Fachmodule. Ein Modul implementiert `PlatformExtension`
-und meldet sich über `META-INF/services` an; siehe „Fachmodule“ unten. Wer ein
-Modul nicht braucht, entfernt seine Abhängigkeit aus `agenten-app/pom.xml`.
+und meldet sich über `META-INF/services` an; siehe „Fachmodule“ unten. Welche
+Fachmodule im JAR landen, steht allein in den Abhängigkeiten von
+`agenten-app/pom.xml`. Ein Modul wird abgeschaltet, indem man seine Abhängigkeit
+dort auskommentiert; gebaut und getestet wird es weiterhin.
+
+**Aktueller Stand:** Das Monitor-Modul ist in `agenten-app/pom.xml` auskommentiert.
+Das JAR enthält nur den Kern; `--monitor` meldet „Unbekannte Option“.
+
+### Lokal einrichten
+
+```bash
+git pull                        # aktuellen Stand von main holen
+mvn verify                      # im Wurzelverzeichnis, baut alle Module
+```
+
+In Eclipse (oder IntelliJ) das Wurzelverzeichnis über *Import → Existing Maven
+Projects* öffnen; die IDE legt je Modul ein Projekt an. Ein früher importiertes
+Einzelprojekt `agenten` vorher entfernen (nur aus dem Workspace, nicht von der
+Platte), weil sich die Ordnerstruktur geändert hat. Gestartet wird
+`com.zuluindustries.agenten.cli.Main` im Projekt `agenten-core` oder `agenten-app`
+mit dem Wurzelverzeichnis als Arbeitsverzeichnis (dort liegen `config/`, `agents/`
+und `workflows/`).
 
 Die Tests rufen keine externen Modelle auf.
 
@@ -86,9 +106,10 @@ Wirksame Konfigurationsbereiche:
   vollständiger JSON-Schema-Standard bis Draft 2020-12 einschließlich `format`)
 
 Mitgeliefert sind `assistant`, `aufgaben` (zwei Skills mit Skill-Routing und
-Fallback-Profil), `workflow_worker`, `verfuegbarkeits_bericht` sowie
-`agent_builder`, `agent_creator_agent`, `prompt_agent`, `workflow_creator_agent`
-und `coordinator` (siehe unten).
+Fallback-Profil), `workflow_worker` sowie `agent_builder`, `agent_creator_agent`,
+`prompt_agent`, `workflow_creator_agent` und `coordinator` (siehe unten). Der
+Agent `verfuegbarkeits_bericht` gehört zum Monitor-Modul und ist nur mit diesem
+verfügbar.
 
 ### Neue Agenten erzeugen
 
@@ -401,7 +422,8 @@ Scheitert der Bericht (etwa ohne API-Schlüssel), werden Übersicht und
 Portiert ist der Plattformkern: Agentendefinitionen, Tool- und Skill-System,
 Richtlinien und Berechtigungen, Agent-Runtime mit Fallback, die Provider OpenAI,
 Anthropic und Scaleway, Kostenberechnung, Workflow-Engine und Service-Katalog,
-Agent Builder, Workflow Creator und Coordinator.
+Agent Builder, Workflow Creator und Coordinator. Neu gegenüber Python ist der
+B2B-Verfügbarkeitsmonitor als erstes Fachmodul.
 
 Noch nicht portiert:
 
